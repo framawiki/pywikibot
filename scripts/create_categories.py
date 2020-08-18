@@ -3,18 +3,19 @@
 r"""
 Program to batch create categories.
 
-The program expects a generator of page titles to be used as
-suffix for creating new categories with a different base.
+The program expects a generator of category titles to be used
+as suffix for creating new categories with a different base.
 
 The following command line parameters are supported:
 
 -always         Don't ask, just do the edit.
 
--overwrite      (not implemented yet).
-
 -parent         The name of the parent category.
 
 -basename       The base to be used for the new category names.
+
+-overwrite:     Existing category is skipped by default. Use this option to
+                overwrite a category.
 
 Example:
 
@@ -26,53 +27,69 @@ Example:
         -basename:"Cultural heritage monuments in"
 
 The page 'User:Multichill/Wallonia' on commons contains
-page links like [[Category:Hensies]], causing this script
+category links like [[Category:Hensies]], causing this script
 to create [[Category:Cultural heritage monuments in Hensies]].
-
 """
 #
-# (C) Multichill, 2011
-# (C) xqt, 2011-2016
-# (c) Pywikibot team, 2017
+# (c) Pywikibot team, 2011-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import pywikibot
-from pywikibot import pagegenerators, Bot
+from pywikibot.bot import AutomaticTWSummaryBot, SingleSiteBot
+from pywikibot import pagegenerators
+from pywikibot.site import Namespace
 
 
-class CreateCategoriesBot(Bot):
+class CreateCategoriesBot(SingleSiteBot, AutomaticTWSummaryBot):
 
     """Category creator bot."""
 
-    def __init__(self, generator, parent, basename, **kwargs):
-        """Constructor."""
-        super(CreateCategoriesBot, self).__init__(**kwargs)
-        self.generator = generator
-        self.parent = parent
-        self.basename = basename
-        self.comment = u'Creating new category'
+    summary_key = 'create_categories-create'
 
-    def treat(self, page):
-        """Create category in commons for that page."""
-        title = page.title(withNamespace=False)
+    def __init__(self, **kwargs):
+        """Initializer."""
+        self.availableOptions.update({
+            'basename': None,
+            'parent': None,
+            'overwrite': False,
+        })
+        super().__init__(**kwargs)
 
-        newpage = pywikibot.Category(pywikibot.Site('commons', 'commons'),
-                                     '%s %s' % (self.basename, title))
-        newtext = (u'[[Category:%(parent)s|%(title)s]]\n'
-                   u'[[Category:%(title)s]]\n'
-                   % {'parent': self.parent, 'title': title})
+    def init_page(self, item):
+        """Create a category to be processed with the given page title."""
+        page = super().init_page(item)
+        title = page.title(with_ns=False)
+        if page.namespace() != Namespace.CATEGORY:
+            # return the page title to be skipped later within skip_page
+            return title
 
-        if not newpage.exists():
-            pywikibot.output(newpage.title())
-            self.userPut(newpage, '', newtext, summary=self.comment,
-                         ignore_save_related_errors=True,
-                         ignore_server_errors=True)
-        else:
-            # FIXME: Add overwrite option
-            pywikibot.output(u'%s already exists, skipping' % newpage.title())
+        category = pywikibot.Category(
+            page.site, '{} {}'.format(self.getOption('basename'), title))
+
+        text = '[[{namespace}:{parent}|{title}]]\n{category}\n'.format(
+            namespace=page.site.namespace(Namespace.CATEGORY),
+            parent=self.getOption('parent'),
+            title=title,
+            category=page)
+        category.text = text
+        return category
+
+    def treat_page(self):
+        """Create category in local site for that page."""
+        newtext = self.current_page.text
+        self.current_page.text = ''
+        self.put_current(newtext, ignore_server_errors=True)
+
+    def skip_page(self, page):
+        """Skip page if it is not overwritten."""
+        if isinstance(page, str):
+            pywikibot.warning(page + ' is not a category, skipping')
+            return True
+        if page.exists() and not self.getOption('overwrite'):
+            pywikibot.warning('{} already exists, skipping'.format(page))
+            return True
+        return super().skip_page(page)
 
 
 def main(*args):
@@ -82,43 +99,36 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
-    parent = None
-    basename = None
     options = {}
 
     # Process global args and prepare generator args parser
     local_args = pywikibot.handle_args(args)
-    genFactory = pagegenerators.GeneratorFactory()
+    gen_factory = pagegenerators.GeneratorFactory()
 
     for arg in local_args:
-        if arg == '-always':
-            options['always'] = True
-        elif arg.startswith('-parent:'):
-            parent = arg[len('-parent:'):].strip()
-        elif arg.startswith('-basename'):
-            basename = arg[len('-basename:'):].strip()
+        option, _, value = arg.partition(':')
+        opt = option[1:]
+        if arg in ('-always', '-overwrite'):
+            options[opt] = True
+        elif option in ('-parent', '-basename'):
+            if value:
+                options[opt] = value
         else:
-            genFactory.handleArg(arg)
+            gen_factory.handleArg(arg)
 
-    missing = set()
-    if not parent:
-        missing.add('-parent')
-    if not basename:
-        missing.add('-basename')
+    missing = ['-' + arg for arg in ('basename', 'parent')
+               if arg not in options]
 
-    generator = genFactory.getCombinedGenerator()
-    if generator and missing:
-        bot = CreateCategoriesBot(generator, parent, basename, **options)
-        bot.run()
-        pywikibot.output('All done')
-        return True
-    else:
-        pywikibot.bot.suggest_help(missing_parameters=missing,
-                                   missing_generator=not generator)
-        return False
+    generator = gen_factory.getCombinedGenerator()
+    if pywikibot.bot.suggest_help(missing_parameters=missing,
+                                  missing_generator=not generator):
+        return
+
+    bot = CreateCategoriesBot(generator=generator, **options)
+    bot.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

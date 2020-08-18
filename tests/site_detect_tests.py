@@ -1,19 +1,28 @@
 # -*- coding: utf-8 -*-
 """Test for site detection."""
 #
-# (C) Pywikibot team, 2014-2016
+# (C) Pywikibot team, 2014-2020
 #
 # Distributed under the terms of the MIT license.
 #
 
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 from requests.exceptions import ConnectionError, Timeout
 
+import pywikibot
 from pywikibot.exceptions import ServerError
 from pywikibot.site_detect import MWSite
+from pywikibot.tools import PY2
 
-from tests.aspects import unittest, TestCase
+from tests import unittest_print
+from tests.aspects import unittest, TestCase, PatchingTestCase
+from tests.utils import DrySite
+
+if not PY2:
+    from urllib.parse import urlparse
+else:
+    from urlparse import urlparse
 
 
 class SiteDetectionTestCase(TestCase):
@@ -32,7 +41,7 @@ class SiteDetectionTestCase(TestCase):
         """
         try:
             self.assertIsInstance(MWSite(url), MWSite)
-        except (ServerError, Timeout, ConnectionError) as e:
+        except (ServerError, Timeout) as e:
             self.skipTest(e)
 
     def assertNoSite(self, url):
@@ -43,8 +52,11 @@ class SiteDetectionTestCase(TestCase):
         @type url: str
         @raises AssertionError: Site under url is MediaWiki powered
         """
-        self.assertRaises((AttributeError, ConnectionError, RuntimeError,
-                           ServerError, Timeout), MWSite, url)
+        with self.assertRaises((AttributeError, ConnectionError, RuntimeError,
+                                ServerError, Timeout)) as e:
+            MWSite(url)
+        unittest_print('\nassertNoSite expected exception:\n{e!r}'
+                       .format(e=e.exception))
 
 
 class StandardVersionSiteTestCase(SiteDetectionTestCase):
@@ -71,22 +83,14 @@ class StandardVersionSiteTestCase(SiteDetectionTestCase):
     def test_wikichristian(self):
         """Test detection of MediaWiki sites for www.wikichristian.org.
 
-        Server that hosts www.wikichristian.org is unreliable - it occasionally
-        responding with 500 error (see: T151368).
+        Server that hosts www.wikichristian.org is unreliable - it
+        occasionally responding with 500 error (see: T151368).
         """
         self.assertSite('http://www.wikichristian.org/index.php?title=$1')
 
     def test_wikifur(self):
         """Test detection of MediaWiki sites for en.wikifur.com."""
         self.assertSite('https://en.wikifur.com/wiki/$1')
-
-    def test_bluwiki(self):
-        """Test detection of MediaWiki sites for bluwiki.com."""
-        self.assertSite('http://bluwiki.com/go/$1')
-
-    def test_kino_skirpov(self):
-        """Test detection of MediaWiki sites for kino.skripov.com."""
-        self.assertSite('http://kino.skripov.com/index.php/$1')
 
 
 class NonStandardVersionSiteTestCase(SiteDetectionTestCase):
@@ -98,8 +102,8 @@ class NonStandardVersionSiteTestCase(SiteDetectionTestCase):
         self.assertSite('https://wiki.gentoo.org/wiki/$1')
 
     def test_arabeyes(self):
-        """Test detection of MediaWiki sites for wiki.arabeyes.org."""
-        self.assertSite('http://wiki.arabeyes.org/$1')
+        """Test detection of MediaWiki sites for www.arabeyes.org."""
+        self.assertSite('https://www.arabeyes.org/$1')
 
     def test_tfwiki(self):
         """Test detection of MediaWiki sites for tfwiki.net."""
@@ -110,28 +114,14 @@ class Pre114SiteTestCase(SiteDetectionTestCase):
 
     """Test pre 1.14 sites which should be detected as unsupported."""
 
-    def test_livepedia(self):
-        """Test detection of MediaWiki sites for www.livepedia.gr."""
-        self.assertNoSite(
-            'http://www.livepedia.gr/index.php?title=$1')  # v1.12
-
     def test_wikifon(self):
         """Test detection of MediaWiki sites for www.wikifon.org."""
         self.assertNoSite('http://www.wikifon.org/$1')  # v1.11
-
-    def test_reuters(self):
-        """Test detection of MediaWiki sites for glossary.reuters.com."""
-        self.assertNoSite(
-            'http://glossary.reuters.com/index.php?title=$1')  # v1.11
 
     def test_wikitree(self):
         """Test detection of MediaWiki sites for wikitree.org."""
         # v1.11, with no query module
         self.assertNoSite('http://wikitree.org/index.php?title=$1')
-
-    def test_wikinvest(self):
-        """Test detection of MediaWiki sites for www.wikinvest.com."""
-        self.assertNoSite('http://www.wikinvest.com/$1')  # v1.9
 
 
 class PreAPISiteTestCase(SiteDetectionTestCase):
@@ -145,10 +135,6 @@ class PreAPISiteTestCase(SiteDetectionTestCase):
     def test_thelemapedia(self):
         """Test detection of MediaWiki sites for www.thelemapedia.org."""
         self.assertNoSite('http://www.thelemapedia.org/index.php/$1')
-
-    def test_blahus(self):
-        """Test detection of MediaWiki sites for esperanto.blahus.cz."""
-        self.assertNoSite('http://esperanto.blahus.cz/cxej/vikio/index.php/$1')
 
     def test_werelate(self):
         """Test detection of MediaWiki sites for www.werelate.org."""
@@ -196,11 +182,6 @@ class FailingSiteTestCase(SiteDetectionTestCase):
         """
         self.assertNoSite('http://wiki.animutationportal.com/index.php/$1')
 
-    @unittest.expectedFailure
-    def test_hackerspaces(self):
-        """Test detection of MediaWiki sites for hackerspaces.org."""
-        self.assertNoSite('http://hackerspaces.org/wiki/$1')
-
 
 class APIDisabledTestCase(SiteDetectionTestCase):
 
@@ -222,10 +203,6 @@ class NoSiteTestCase(SiteDetectionTestCase):
     def test_ecyrd(self):
         """Test detection of MediaWiki sites for www.ecyrd.com."""
         self.assertNoSite('http://www.ecyrd.com/JSPWiki/Wiki.jsp?page=$1')
-
-    def test_operawiki(self):
-        """Test detection of MediaWiki sites for operawiki.info."""
-        self.assertNoSite('http://operawiki.info/$1')
 
     def test_tvtropes(self):
         """Test detection of MediaWiki sites for www.tvtropes.org."""
@@ -254,9 +231,9 @@ class OfflineSiteTestCase(SiteDetectionTestCase):
 
     """Test offline sites."""
 
-    def test_seattlewiki(self):
-        """Test detection of MediaWiki sites for seattlewiki.org."""
-        self.assertNoSite('http://seattlewiki.org/wiki/$1')
+    def test_opensprints_wiki(self):
+        """Test detection of MediaWiki sites for wiki.opensprints.org."""
+        self.assertNoSite('http://wiki.opensprints.org/index.php?title=$1')
 
 
 class OtherSiteTestCase(SiteDetectionTestCase):
@@ -266,10 +243,105 @@ class OtherSiteTestCase(SiteDetectionTestCase):
     def test_musicbrainz(self):
         """Test http://musicbrainz.org/doc/ which has a page 'api.php'.
 
-        Possible false positive caused by the existance of a page called
+        Possible false positive caused by the existence of a page called
         http://musicbrainz.org/doc/api.php.
         """
         self.assertNoSite('http://musicbrainz.org/doc/$1')
+
+
+class PrivateWikiTestCase(PatchingTestCase):
+
+    """Test generate_family_file works for private wikis."""
+
+    net = False
+
+    SCHEME = 'https'
+    NETLOC = 'privatewiki.example.com'
+    WEBPATH = '/wiki/'
+    SCRIPTPATH = '/w'
+    APIPATH = SCRIPTPATH + '/api.php'
+    USERNAME = 'Private Wiki User'
+    VERSION = '1.33.0'
+    LANG = 'ike-cans'
+
+    _server = SCHEME + '://' + NETLOC
+    _weburl = _server + WEBPATH
+    _apiurl = _server + APIPATH
+    _generator = 'MediaWiki ' + VERSION
+
+    _responses = {
+        # site_detect.MWSite.__init__ first fetches whatever is at
+        # the user-supplied URL. We need to return enough data for
+        # site_detect.WikiHTMLPageParser to determine the server
+        # version and the API URL.
+        WEBPATH: ''.join((
+            '<meta name="generator" content="', _generator,
+            '"/>\n<link rel="EditURI" type="application/rsd+xml" '
+            'href="', _apiurl, '?action=rsd"/>')),
+        APIPATH: '{"error":{"code":"readapidenied"}}',
+    }
+
+    _siteinfo = {
+        'generator': _generator,
+        'server': _server,
+        'scriptpath': SCRIPTPATH,
+        'articlepath': WEBPATH.rstrip('/') + '/$1',
+        'lang': LANG,
+    }
+
+    @PatchingTestCase.patched(pywikibot.site_detect, 'fetch')
+    def fetch(self, url, *args, **kwargs):
+        """Patched version of pywikibot.site_detect.fetch."""
+        parsed_url = urlparse(url)
+        self.assertEqual(parsed_url.scheme, self.SCHEME)
+        self.assertEqual(parsed_url.netloc, self.NETLOC)
+        self.assertIn(parsed_url.path, self._responses)
+
+        return type(str('Response'),
+                    (object,),
+                    {'status': 200,
+                     'text': self._responses[parsed_url.path],
+                     'data': type(str('ResponseData'),
+                                  (object,),
+                                  {'url': url})})
+
+    @PatchingTestCase.patched(pywikibot, 'input')
+    def input(self, question, *args, **kwargs):
+        """Patched version of pywikibot.input."""
+        self.assertTrue(question.endswith('username?'))
+        return self.USERNAME
+
+    @PatchingTestCase.patched(pywikibot, 'Site')
+    def Site(self, code=None, fam=None, user=None, *args, **kwargs):
+        """Patched version of pywikibot.Site."""
+        self.assertEqual(code, fam.code)
+        self.assertEqual(fam.domain, self.NETLOC)
+        self.assertEqual(user, self.USERNAME)
+        site = DrySite(code, fam, user, *args, **kwargs)
+        site._siteinfo._cache.update(
+            (key, (value, True))
+            for key, value in self._siteinfo.items())
+        return site
+
+    def test_T235768_failure(self):
+        """Test generate_family_file works for private wikis.
+
+        generate_family_file.FamilyFileGenerator.run() does:
+          w = self.Wiki(self.base_url)
+          self.wikis[w.lang] = w
+
+        where self.Wiki is pywikibot.site_detect.MWSite.__init__.
+        That calls MWSite._parse_post_117() which sets lang, but
+        that call's wrapped to log exceptions and then continue
+        past them.  In T235768, the code that handles private
+        wikis raises an exception that's consumed in that way.
+        The value returned to FamilyFileGenerator.run() does not
+        have lang set, causing generate_family_file to bomb.
+        """
+        site = MWSite(self._weburl)
+        self.assertIsInstance(site, MWSite)
+        self.assertTrue(hasattr(site, 'lang'))
+        self.assertEqual(site.lang, self.LANG)
 
 
 if __name__ == '__main__':  # pragma: no cover

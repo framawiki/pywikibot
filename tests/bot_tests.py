@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """Bot tests."""
 #
-# (C) Pywikibot team, 2015-2018
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import sys
+
+from contextlib import suppress
 
 import pywikibot
 import pywikibot.bot
 
 from pywikibot import i18n
-from pywikibot.tools import PY2, suppress_warnings
+from pywikibot.tools import suppress_warnings
 
 from tests.aspects import (
     unittest, DefaultSiteTestCase, SiteAttributeTestCase, TestCase,
@@ -28,8 +28,8 @@ class TWNBotTestCase(TestCase):
     def setUpClass(cls):
         """Verify that the translations are available."""
         if not i18n.messages_available():
-            raise unittest.SkipTest("i18n messages package '%s' not available."
-                                    % i18n._messages_package_name)
+            raise unittest.SkipTest("i18n messages package '{}' not available."
+                                    .format(i18n._messages_package_name))
         super(TWNBotTestCase, cls).setUpClass()
 
 
@@ -45,17 +45,17 @@ class FakeSaveBotTestCase(TestCase):
     attribute bot is defined. It also sets the bot's 'always' option to True to
     avoid user interaction.
 
-    The C{bot_save} method compares the save counter before the call and asserts
-    that it has increased by one after the call. It also stores locally in
-    C{save_called} if C{page_save} has been called. If C{bot_save} or
-    C{page_save} are implemented they should call super's method at some point
-    to make sure these assertions work. At C{tearDown} it checks that the pages
-    are saved often enough. The attribute C{default_assert_saves} defines the
-    number of saves which must happen and compares it to the difference using
-    the save counter. It is possible to define C{assert_saves} after C{setUp} to
-    overwrite the default value for certain tests. By default the number of
-    saves it asserts are 1. Additionally C{save_called} increases by 1 on each
-    call of C{page_save} and should be equal to C{assert_saves}.
+    The C{bot_save} method compares the save counter before the call and
+    asserts that it has increased by one after the call. It also stores
+    locally in C{save_called} if C{page_save} has been called. If C{bot_save}
+    or C{page_save} are implemented they should call super's method at some
+    point to make sure these assertions work. At C{tearDown} it checks that
+    the pages are saved often enough. The attribute C{default_assert_saves}
+    defines the number of saves which must happen and compares it to the
+    difference using the save counter. It is possible to define C{assert_saves}
+    after C{setUp} to overwrite the default value for certain tests. By default
+    the number of saves it asserts are 1. Additionally C{save_called} increases
+    by 1 on each call of C{page_save} and should be equal to C{assert_saves}.
 
     This means if the bot class actually does other writes, like using
     L{pywikibot.page.Page.save} manually, it'll still write.
@@ -77,7 +77,7 @@ class FakeSaveBotTestCase(TestCase):
         self._old_counter = self._bot._save_counter
 
     def setUp(self):
-        """Set up test by reseting the counters."""
+        """Set up test by resetting the counters."""
         super(FakeSaveBotTestCase, self).setUp()
         self.assert_saves = getattr(self, 'default_assert_saves', 1)
         self.save_called = 0
@@ -115,10 +115,11 @@ class TestBotTreatExit(object):
 
         It uses pages as an iterator and compares the page given to the page
         returned by pages iterator. It checks that the bot's _site and site
-        attributes are set to the page's site. If _treat_site is set with a Site
-        it compares it to that one too.
+        attributes are set to the page's site. If _treat_site is set with a
+        Site it compares it to that one too.
 
-        Afterwards it calls post_treat so it's possible to do additional checks.
+        Afterwards it calls post_treat so it's possible to do additional
+        checks.
         """
         def treat(page):
             self.assertEqual(page, next(self._page_iter))
@@ -169,8 +170,8 @@ class TestBotTreatExit(object):
                 self.assertIs(exc, exception)
             else:
                 self.assertIsNone(exc)
-                # Cannot use assertRaisesRegex. Python 2.6 issue. See T158519.
-                self.assertRaises(StopIteration, next, self._page_iter)
+                self.assertRaisesRegex(StopIteration, '^$', next,
+                                       self._page_iter)
         return exit
 
 
@@ -178,7 +179,7 @@ class TestDrySiteBot(TestBotTreatExit, SiteAttributeTestCase):
 
     """Tests for the BaseBot subclasses."""
 
-    CANT_SET_ATTRIBUTE_RE = 'can\'t set attribute'
+    CANT_SET_ATTRIBUTE_RE = "can't set attribute"
     NOT_IN_TREAT_RE = 'Requesting the site not while in treat is not allowed.'
     dry = True
 
@@ -228,21 +229,17 @@ class TestDrySiteBot(TestBotTreatExit, SiteAttributeTestCase):
         # Assert no specific site
         self._treat_site = False
         self.bot = pywikibot.bot.MultipleSitesBot(generator=self._generator())
-        with self.assertRaisesRegex(AttributeError, self.CANT_SET_ATTRIBUTE_RE):
+        with self.assertRaisesRegex(AttributeError,
+                                    self.CANT_SET_ATTRIBUTE_RE):
             self.bot.site = self.de
         with self.assertRaisesRegex(ValueError, self.NOT_IN_TREAT_RE):
             self.bot.site
-        if PY2:
-            # The exc_info still contains the AttributeError :/
-            sys.exc_clear()
+
         self.bot.treat = self._treat(self._generator())
         self.bot.exit = self._exit(4)
         self.bot.run()
         with self.assertRaisesRegex(ValueError, self.NOT_IN_TREAT_RE):
             self.bot.site
-        if PY2:
-            # The exc_info still contains the AttributeError :/
-            sys.exc_clear()
 
     def test_Bot(self):
         """Test normal Bot class."""
@@ -292,12 +289,7 @@ class TestDrySiteBot(TestBotTreatExit, SiteAttributeTestCase):
                                       pywikibot.Page(self.de, 'Page 3')],
                                      post_treat)
 
-        # TODO: sys.exc_info is empty in Python 3
-        if not PY2:
-            exc = None
-        else:
-            exc = KeyboardInterrupt
-        self.bot.exit = self._exit(2, exception=exc)
+        self.bot.exit = self._exit(2, exception=None)
         self.bot.run()
 
 
@@ -314,7 +306,7 @@ class LiveBotTestCase(TestBotTreatExit, DefaultSiteTestCase):
 
     def _missing_generator(self):
         """Yield pages and the last one does not exist."""
-        self._count = 1
+        self._count = 0  # skip_page skips one page
         self._current_page = list(self.site.allpages(total=1))[0]
         yield self._current_page
         while self._current_page.exists():
@@ -346,8 +338,9 @@ class LiveBotTestCase(TestBotTreatExit, DefaultSiteTestCase):
 
     def test_CreatingPageBot(self):
         """Test CreatingPageBot class."""
-        # This doesn't verify much (e.g. it could yield the first existing page)
-        # but the assertion in post_treat should verify that the page is valid
+        # This doesn't verify much (e.g. it could yield the first existing
+        # page) but the assertion in post_treat should verify that the page
+        # is valid
         def treat_generator():
             """Yield just one current page (the last one)."""
             yield self._current_page
@@ -365,7 +358,5 @@ class LiveBotTestCase(TestBotTreatExit, DefaultSiteTestCase):
 
 
 if __name__ == '__main__':  # pragma: no cover
-    try:
+    with suppress(SystemExit):
         unittest.main()
-    except SystemExit:
-        pass

@@ -11,40 +11,24 @@ This module is responsible for
     - URL-encoding all data
     - Basic HTTP error handling
 """
-from __future__ import absolute_import, print_function, unicode_literals
-
 #
-# (C) Pywikibot team, 2007-2017
+# (C) Pywikibot team, 2007-2020
 #
 # Distributed under the terms of the MIT license.
 #
-
 __docformat__ = 'epytext'
 
 import atexit
 import sys
 
+from http import cookiejar
 from string import Formatter
+from urllib.parse import quote, urlparse
 from warnings import warn
 
 import requests
 
-try:
-    import requests_oauthlib
-except ImportError as e:
-    requests_oauthlib = e
-
-if sys.version_info[0] > 2:
-    from http import cookiejar as cookielib
-    from urllib.parse import quote, urlparse
-else:
-    import cookielib
-    from urllib2 import quote
-    from urlparse import urlparse
-
-from pywikibot import config
-
-from pywikibot import __release__
+from pywikibot import __version__, __url__, config
 from pywikibot.bot import calledModuleName
 from pywikibot.comms import threadedhttp
 from pywikibot.exceptions import (
@@ -56,52 +40,28 @@ from pywikibot.tools import (
     deprecate_arg,
     file_mode_checker,
     issue_deprecation_warning,
-    PY2,
-    StringTypes,
+    ModuleDeprecationWrapper,
 )
-
 import pywikibot.version
+
+try:
+    import requests_oauthlib
+except ImportError as e:
+    requests_oauthlib = e
+
 
 # The error message for failed SSL certificate verification
 # 'certificate verify failed' is a commonly detectable string
 SSL_CERT_VERIFY_FAILED_MSG = 'certificate verify failed'
 
-_logger = "comm.http"
+_logger = 'comm.http'
 
-
-def mode_check_decorator(func):
-    """Decorate load()/save() CookieJar methods."""
-    def wrapper(cls, **kwargs):
-        try:
-            filename = kwargs['filename']
-        except KeyError:
-            filename = cls.filename
-        res = func(cls, **kwargs)
-        file_mode_checker(filename, mode=0o600)
-        return res
-    return wrapper
-
-
-# in PY2 cookielib.LWPCookieJar is not a new-style class.
-class PywikibotCookieJar(cookielib.LWPCookieJar, object):
-
-    """CookieJar which checks file permissions."""
-
-    @mode_check_decorator
-    def load(self, **kwargs):
-        """Load cookies from file."""
-        super(PywikibotCookieJar, self).load()
-
-    @mode_check_decorator
-    def save(self, **kwargs):
-        """Save cookies to file."""
-        super(PywikibotCookieJar, self).save()
-
-
-cookie_jar = PywikibotCookieJar(config.datafilepath('pywikibot.lwp'))
+cookie_file_path = config.datafilepath('pywikibot.lwp')
+file_mode_checker(cookie_file_path, create=True)
+cookie_jar = cookiejar.LWPCookieJar(cookie_file_path)
 try:
     cookie_jar.load()
-except (IOError, cookielib.LoadError):
+except cookiejar.LoadError:
     debug('Loading cookies failed.', _logger)
 else:
     debug('Loaded cookies from file.', _logger)
@@ -112,14 +72,11 @@ session.cookies = cookie_jar
 
 # Prepare flush on quit
 def _flush():
+    log('Closing network session.')
     session.close()
-    message = 'Closing network session.'
+
     if hasattr(sys, 'last_type'):
-        # we quit because of an exception
-        print(sys.last_type)
-        critical(message)
-    else:
-        log(message)
+        critical('Exiting due to uncaught exception {}'.format(sys.last_type))
 
     log('Network session closed.')
 
@@ -127,9 +84,9 @@ def _flush():
 atexit.register(_flush)
 
 USER_AGENT_PRODUCTS = {
-    'python': 'Python/' + '.'.join([str(i) for i in sys.version_info]),
+    'python': 'Python/' + '.'.join(str(i) for i in sys.version_info),
     'http_backend': 'requests/' + requests.__version__,
-    'pwb': 'Pywikibot/' + __release__,
+    'pwb': 'Pywikibot/' + __version__,
 }
 
 
@@ -142,8 +99,7 @@ class _UserAgentFormatter(Formatter):
         # This is the Pywikibot revision; also map it to {version} at present.
         if key == 'version' or key == 'revision':
             return pywikibot.version.getversiondict()['rev']
-        else:
-            return super(_UserAgentFormatter, self).get_value(key, args, kwargs)
+        return super(_UserAgentFormatter, self).get_value(key, args, kwargs)
 
 
 _USER_AGENT_FORMATTER = _UserAgentFormatter()
@@ -160,21 +116,19 @@ def user_agent_username(username=None):
     """
     if not username:
         return ''
+
     username = username.replace(' ', '_')  # Avoid spaces or %20.
     try:
         username.encode('ascii')  # just test, but not actually use it
     except UnicodeEncodeError:
-        pass
+        username = quote(username.encode('utf-8'))
     else:
         # % is legal in the default $wgLegalTitleChars
         # This is so that ops know the real pywikibot will not
         # allow a useragent in the username to allow through a hand-coded
         # percent-encoded value.
         if '%' in username:
-            return quote(username)
-        else:
-            return username
-    username = quote(username.encode('utf-8'))
+            username = quote(username)
     return username
 
 
@@ -188,7 +142,7 @@ def user_agent(site=None, format_string=None):
         str.format. Is using config.user_agent_format when it is None.
     @type format_string: basestring
     @return: The formatted user agent
-    @rtype: unicode
+    @rtype: str
     """
     values = USER_AGENT_PRODUCTS.copy()
 
@@ -201,11 +155,13 @@ def user_agent(site=None, format_string=None):
 
     script_comments = []
     username = ''
+    if config.user_agent_description:
+        script_comments.append(config.user_agent_description)
     if site:
         script_comments.append(str(site))
 
         # TODO: there are several ways of identifying a user, and username
-        # is not the best for a HTTP header if the username isnt ASCII.
+        # is not the best for a HTTP header if the username isn't ASCII.
         if site.username():
             username = user_agent_username(site.username())
             script_comments.append(
@@ -225,11 +181,11 @@ def user_agent(site=None, format_string=None):
 
     formatted = _USER_AGENT_FORMATTER.format(format_string, **values)
     # clean up after any blank components
-    formatted = formatted.replace(u'()', u'').replace(u'  ', u' ').strip()
+    formatted = formatted.replace('()', '').replace('  ', ' ').strip()
     return formatted
 
 
-@deprecated('pywikibot.comms.http.fake_user_agent')
+@deprecated('pywikibot.comms.http.fake_user_agent', since='20161205')
 def get_fake_user_agent():
     """
     Return a fake user agent depending on `fake_user_agent` option in config.
@@ -238,12 +194,11 @@ def get_fake_user_agent():
 
     @rtype: str
     """
-    if isinstance(config.fake_user_agent, StringTypes):
+    if isinstance(config.fake_user_agent, str):
         return config.fake_user_agent
-    elif config.fake_user_agent or config.fake_user_agent is None:
-        return fake_user_agent()
-    else:
+    if config.fake_user_agent is False:
         return user_agent()
+    return fake_user_agent()
 
 
 def fake_user_agent():
@@ -253,19 +208,11 @@ def fake_user_agent():
     @rtype: str
     """
     try:
-        import browseragents
-        return browseragents.core.random()
+        from fake_useragent import UserAgent
     except ImportError:
-        pass
-
-    try:
-        import fake_useragent
-        return fake_useragent.fake.UserAgent().random
-    except ImportError:
-        pass
-
-    raise ImportError(  # Actually complain when neither is installed.
-        'Either browseragents or fake_useragent must be installed to get fake UAs.')
+        raise ImportError(  # Actually complain when fake_useragent is missing.
+            'fake_useragent must be installed to get fake UAs.')
+    return UserAgent().random
 
 
 @deprecate_arg('ssl', None)
@@ -285,7 +232,7 @@ def request(site=None, uri=None, method='GET', params=None, body=None,
     @type site: L{pywikibot.site.BaseSite}
     @param uri: the URI to retrieve
     @type uri: str
-    @param charset: Either a valid charset (usable for str.decode()) or None
+    @keyword charset: Either a valid charset (usable for str.decode()) or None
         to automatically chose the charset from the returned header (defaults
         to latin-1)
     @type charset: CodecInfo, str, None
@@ -301,25 +248,25 @@ def request(site=None, uri=None, method='GET', params=None, body=None,
     if not site:
         # +1 because of @deprecate_arg
         issue_deprecation_warning(
-            'Invoking http.request without argument site', 'http.fetch()', 3)
+            'Invoking http.request without argument site', 'http.fetch()', 3,
+            since='20150814')
         r = fetch(uri, method, params, body, headers, **kwargs)
-        return r.content
+        return r.text
 
-    baseuri = site.base_url(uri)
-
-    kwargs.setdefault("disable_ssl_certificate_validation",
+    kwargs.setdefault('disable_ssl_certificate_validation',
                       site.ignore_certificate_error())
 
     if not headers:
         headers = {}
         format_string = None
     else:
-        format_string = headers.get('user-agent', None)
-
+        format_string = headers.get('user-agent')
     headers['user-agent'] = user_agent(site, format_string)
 
+    baseuri = site.base_url(uri)
     r = fetch(baseuri, method, params, body, headers, **kwargs)
-    return r.content
+    site.throttle.retry_after = int(r.response_headers.get('retry-after', 0))
+    return r.text
 
 
 def get_authentication(uri):
@@ -341,9 +288,9 @@ def get_authentication(uri):
                 return config.authenticate[path]
             warn('config.authenticate["{path}"] has invalid value.\n'
                  'It should contain 2 or 4 items, not {length}.\n'
-                 'See https://www.mediawiki.org/wiki/Manual:Pywikibot/OAuth '
-                 'for more info.'
-                 .format(path=path, length=len(config.authenticate[path])))
+                 'See {url}/OAuth for more info.'
+                 .format(path=path, length=len(config.authenticate[path]),
+                         url=__url__))
     return None
 
 
@@ -363,8 +310,6 @@ def _http_process(session, http_request):
     params = http_request.params
     body = http_request.body
     headers = http_request.headers
-    if PY2 and headers:
-        headers = dict((key, str(value)) for key, value in headers.items())
     auth = get_authentication(uri)
     if auth is not None and len(auth) == 4:
         if isinstance(requests_oauthlib, ImportError):
@@ -403,15 +348,15 @@ def error_handling_callback(request):
         if SSL_CERT_VERIFY_FAILED_MSG in str(request.data):
             raise FatalServerError(str(request.data))
 
-    # if all else fails
-    if isinstance(request.data, Exception):
-        raise request.data
-
     if request.status == 504:
-        raise Server504Error("Server %s timed out" % request.hostname)
+        raise Server504Error('Server %s timed out' % request.hostname)
 
     if request.status == 414:
         raise Server414Error('Too long GET request')
+
+    if isinstance(request.data, Exception):
+        error('An error occurred for uri ' + request.uri)
+        raise request.data
 
     # HTTP status 207 is also a success status for Webdav FINDPROP,
     # used by the version module.
@@ -419,8 +364,8 @@ def error_handling_callback(request):
         warning('Http response status {0}'.format(request.data.status_code))
 
 
-def _enqueue(uri, method="GET", params=None, body=None, headers=None, data=None,
-             **kwargs):
+def _enqueue(uri, method='GET', params=None, body=None, headers=None,
+             data=None, **kwargs):
     """
     Enqueue non-blocking threaded HTTP request with callback.
 
@@ -474,7 +419,7 @@ def _enqueue(uri, method="GET", params=None, body=None, headers=None, data=None,
     return request
 
 
-def fetch(uri, method="GET", params=None, body=None, headers=None,
+def fetch(uri, method='GET', params=None, body=None, headers=None,
           default_error_handling=True, use_fake_user_agent=False, data=None,
           **kwargs):
     """
@@ -501,22 +446,65 @@ def fetch(uri, method="GET", params=None, body=None, headers=None,
     # Change user agent depending on fake UA settings.
     # Set header to new UA if needed.
     headers = headers or {}
-    if not headers.get('user-agent', None):  # Skip if already specified in request.
+    # Skip if already specified in request.
+    if not headers.get('user-agent', None):
         # Get fake UA exceptions from `fake_user_agent_exceptions` config.
         uri_domain = urlparse(uri).netloc
         use_fake_user_agent = config.fake_user_agent_exceptions.get(
             uri_domain, use_fake_user_agent)
 
-        if use_fake_user_agent and isinstance(
-                use_fake_user_agent, StringTypes):  # Custom UA.
-            headers['user-agent'] = use_fake_user_agent
+        if use_fake_user_agent and isinstance(use_fake_user_agent, str):
+            headers['user-agent'] = use_fake_user_agent  # Custom UA.
         elif use_fake_user_agent is True:
             headers['user-agent'] = fake_user_agent()
 
     request = _enqueue(uri, method, params, body, headers, **kwargs)
-    assert(request._data is not None)  # if there's no data in the answer we're in trouble
+    # if there's no data in the answer we're in trouble
+    assert request._data is not None
     # Run the error handling callback in the callers thread so exceptions
     # may be caught.
     if default_error_handling:
         error_handling_callback(request)
     return request
+
+# Deprecated parts ############################################################
+
+
+def _mode_check_decorator(func):
+    """DEPRECATED. Decorate load()/save() CookieJar methods."""
+    def wrapper(cls, **kwargs):
+        try:
+            filename = kwargs['filename']
+        except KeyError:
+            filename = cls.filename
+        res = func(cls, **kwargs)
+        file_mode_checker(filename, mode=0o600)
+        return res
+    return wrapper
+
+
+class PywikibotCookieJar(cookiejar.LWPCookieJar):
+
+    """DEPRECATED. CookieJar which checks file permissions."""
+
+    @deprecated(since='20181007', future_warning=True)
+    def __init__(self, *args, **kwargs):
+        """Initialize the class."""
+        super().__init__(*args, **kwargs)
+
+    @_mode_check_decorator
+    def load(self, **kwargs):
+        """Load cookies from file."""
+        super().load()
+
+    @_mode_check_decorator
+    def save(self, **kwargs):
+        """Save cookies to file."""
+        super().save()
+
+
+wrapper = ModuleDeprecationWrapper(__name__)
+wrapper._add_deprecated_attr('PywikibotCookieJar', replacement_name='',
+                             since='20181007', future_warning=True)
+wrapper._add_deprecated_attr('mode_check_decorator', _mode_check_decorator,
+                             since='20200724', future_warning=True)

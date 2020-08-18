@@ -9,29 +9,28 @@ language (standard language in Commons). If the name of
 an article in Commons will not be in English but with
 redirect, this also functions.
 
-Run:
 Syntax:
 
     python pwb.py commons_link [action] [pagegenerator]
 
-where action can be one of these:
+where action can be one of these
+
  * pages      : Run over articles, include {{commons}}
  * categories : Run over categories, include {{commonscat}}
 
 and pagegenerator can be one of these:
-&params;
 
+&params;
 """
 #
-# (C) Leonardo Gregianin, 2006
-# (C) Pywikibot team, 2007-2017
+# (C) Pywikibot team, 2006-2019
 #
 # Distributed under the terms of the MIT license.
 #
 # Ported by Geoffrey "GEOFBOT" Mon for Google Code-In 2013
 # User:Sn1per
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import re
 
@@ -39,9 +38,7 @@ import pywikibot
 
 from pywikibot import textlib, pagegenerators, i18n, Bot
 
-docuReplacements = {
-    '&params;': pagegenerators.parameterHelp,
-}
+docuReplacements = {'&params;': pagegenerators.parameterHelp}  # noqa: N816
 
 
 class CommonsLinkBot(Bot):
@@ -49,7 +46,7 @@ class CommonsLinkBot(Bot):
     """Commons linking bot."""
 
     def __init__(self, generator, **kwargs):
-        """Constructor."""
+        """Initializer."""
         self.availableOptions.update({
             'action': None,
         })
@@ -74,46 +71,47 @@ class CommonsLinkBot(Bot):
                                       )(commons, page.title())
                 try:
                     commonspage.get(get_redirect=True)
-                    pagetitle = commonspage.title(withNamespace=not catmode)
+                    pagetitle = commonspage.title(with_ns=not catmode)
                     if page.title() == pagetitle:
-                        oldText = page.get()
-                        text = oldText
+                        old_text = page.get()
+                        text = old_text
 
                         # for Commons/Commonscat template
                         s = self.findTemplate.search(text)
-                        s2 = getattr(self, 'findTemplate%d'
-                                           % (2, 3)[catmode]).search(text)
+                        s2 = getattr(self, 'findTemplate{}'.format(
+                            (2, 3)[catmode]).search(text))
                         if s or s2:
-                            pywikibot.output(u'** Already done.')
+                            pywikibot.output('** Already done.')
                         else:
                             cats = textlib.getCategoryLinks(text,
                                                             site=page.site)
                             text = textlib.replaceCategoryLinks(
-                                u'%s{{commons%s|%s}}'
+                                '%s{{commons%s|%s}}'
                                 % (text, ('', 'cat')[catmode], pagetitle),
                                 cats, site=page.site)
                             comment = i18n.twtranslate(
-                                page.site, 'commons_link%s-template-added'
-                                % ('', '-cat')[catmode])
+                                page.site, 'commons_link{}-template-added'
+                                .format(('', '-cat')[catmode]))
                             try:
-                                self.userPut(page, oldText, text,
+                                self.userPut(page, old_text, text,
                                              summary=comment)
                             except pywikibot.EditConflict:
                                 pywikibot.output(
-                                    u'Skipping %s because of edit conflict'
-                                    % page.title())
+                                    'Skipping {} because of edit conflict'
+                                    .format(page.title()))
 
                 except pywikibot.NoPage:
-                    pywikibot.output(u'%s does not exist in Commons'
-                                     % page.__class__.__name__)
+                    pywikibot.output('{} does not exist in Commons'
+                                     .format(page.__class__.__name__))
 
             except pywikibot.NoPage:
-                pywikibot.output(u'Page %s does not exist' % page.title())
+                pywikibot.output('Page {} does not exist'
+                                 .format(page.title()))
             except pywikibot.IsRedirectPage:
-                pywikibot.output(u'Page %s is a redirect; skipping.'
-                                 % page.title())
+                pywikibot.output('Page {} is a redirect; skipping.'
+                                 .format(page.title()))
             except pywikibot.LockedPage:
-                pywikibot.output(u'Page %s is locked' % page.title())
+                pywikibot.output('Page {} is locked'.format(page.title()))
 
 
 def main(*args):
@@ -123,12 +121,12 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     options = {}
 
     local_args = pywikibot.handle_args(args)
-    genFactory = pagegenerators.GeneratorFactory()
+    gen_factory = pagegenerators.GeneratorFactory()
 
     for arg in local_args:
         if arg in ('pages', 'categories'):
@@ -136,18 +134,16 @@ def main(*args):
         elif arg == '-always':
             options['always'] = True
         else:
-            genFactory.handleArg(arg)
+            gen_factory.handleArg(arg)
 
-    gen = genFactory.getCombinedGenerator(preload=True)
-    if 'action' in options and gen:
-        bot = CommonsLinkBot(gen, **options)
-        bot.run()
-        return True
+    gen = gen_factory.getCombinedGenerator(preload=True)
+    if pywikibot.bot.suggest_help(missing_action='action' not in options,
+                                  missing_generator=not gen):
+        return
 
-    pywikibot.bot.suggest_help(missing_action='action' not in options,
-                               missing_generator=not gen)
-    return False
+    bot = CommonsLinkBot(gen, **options)
+    bot.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

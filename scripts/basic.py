@@ -10,39 +10,38 @@ whatever way you want.
 Use global -simulate option for test purposes. No changes to live wiki
 will be done.
 
-The following parameters are supported:
 
-&params;
+The following parameters are supported:
 
 -always           The bot won't ask for confirmation when putting a page
 
 -text:            Use this text to be added; otherwise 'Test' is used
 
--replace:         Dont add text but replace it
+-replace:         Don't add text but replace it
 
 -top              Place additional text on top of the page
 
 -summary:         Set the action summary message for the edit.
+
+
+The following generators and filters are supported:
+
+&params;
 """
 #
-# (C) Pywikibot team, 2006-2017
+# (C) Pywikibot team, 2006-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import pywikibot
 from pywikibot import pagegenerators
 
 from pywikibot.bot import (
     SingleSiteBot, ExistingPageBot, NoRedirectPageBot, AutomaticTWSummaryBot)
-from pywikibot.tools import issue_deprecation_warning
 
 # This is required for the text that is shown when you run this script
 # with the parameter -help.
-docuReplacements = {
-    '&params;': pagegenerators.parameterHelp
-}
+docuReplacements = {'&params;': pagegenerators.parameterHelp}  # noqa: N816
 
 
 class BasicBot(
@@ -58,18 +57,19 @@ class BasicBot(
     """
     An incomplete sample bot.
 
-    @ivar summary_key: Edit summary message key. The message that should be used
-        is placed on /i18n subdirectory. The file containing these messages
-        should have the same name as the caller script (i.e. basic.py in this
-        case). Use summary_key to set a default edit summary message.
+    @ivar summary_key: Edit summary message key. The message that should be
+        used is placed on /i18n subdirectory. The file containing these
+        messages should have the same name as the caller script (i.e. basic.py
+        in this case). Use summary_key to set a default edit summary message.
+
     @type summary_key: str
     """
 
     summary_key = 'basic-changing'
 
-    def __init__(self, generator, **kwargs):
+    def __init__(self, generator, **kwargs) -> None:
         """
-        Constructor.
+        Initializer.
 
         @param generator: the page generator that determines on which pages
             to work
@@ -84,40 +84,13 @@ class BasicBot(
             'top': False,  # append text on top of the page
         })
 
-        # call constructor of the super class
-        super(BasicBot, self).__init__(site=True, **kwargs)
-
-        # handle old -dry parameter
-        self._handle_dry_param(**kwargs)
+        # call initializer of the super class
+        super().__init__(site=True, **kwargs)
 
         # assign the generator to the bot
         self.generator = generator
 
-    def _handle_dry_param(self, **kwargs):
-        """
-        Read the dry parameter and set the simulate variable instead.
-
-        This is a private method. It prints a deprecation warning for old
-        -dry paramter and sets the global simulate variable and informs
-        the user about this setting.
-
-        The constuctor of the super class ignores it because it is not
-        part of self.availableOptions.
-
-        @note: You should ommit this method in your own application.
-
-        @keyword dry: deprecated option to prevent changes on live wiki.
-            Use -simulate instead.
-        @type dry: bool
-        """
-        if 'dry' in kwargs:
-            issue_deprecation_warning('dry argument',
-                                      'pywikibot.config.simulate', 1)
-            # use simulate variable instead
-            pywikibot.config.simulate = True
-            pywikibot.output('config.simulate was set to True')
-
-    def treat_page(self):
+    def treat_page(self) -> None:
         """Load the given page, do some changes, and save it."""
         text = self.current_page.text
 
@@ -149,14 +122,14 @@ class BasicBot(
         self.put_current(text, summary=self.getOption('summary'))
 
 
-def main(*args):
+def main(*args) -> None:
     """
     Process command line arguments and invoke bot.
 
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     options = {}
     # Process global arguments to determine desired site
@@ -165,13 +138,13 @@ def main(*args):
     # This factory is responsible for processing command line arguments
     # that are also used by other scripts and that determine on which pages
     # to work on.
-    genFactory = pagegenerators.GeneratorFactory()
+    gen_factory = pagegenerators.GeneratorFactory()
 
     # Parse command line arguments
     for arg in local_args:
 
         # Catch the pagegenerators options
-        if genFactory.handleArg(arg):
+        if gen_factory.handleArg(arg):
             continue  # nothing to do here
 
         # Now pick up your own options
@@ -188,15 +161,13 @@ def main(*args):
 
     # The preloading option is responsible for downloading multiple
     # pages from the wiki simultaneously.
-    gen = genFactory.getCombinedGenerator(preload=True)
+    gen = gen_factory.getCombinedGenerator(preload=True)
     if gen:
         # pass generator and private options to the bot
         bot = BasicBot(gen, **options)
         bot.run()  # guess what it does
-        return True
     else:
         pywikibot.bot.suggest_help(missing_generator=True)
-        return False
 
 
 if __name__ == '__main__':

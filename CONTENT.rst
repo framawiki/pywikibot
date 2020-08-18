@@ -4,8 +4,6 @@ The contents of the package
     +----------------------------------------------------------------------------------+
     | README and config files:                                                         |
     +===========================+======================================================+
-    | ChangeLog                 | Log file to keep track of major changes versionwise  |
-    +---------------------------+------------------------------------------------------+
     | CODE_OF_CONDUCT.md        | Code of conduct reference                            |
     +---------------------------+------------------------------------------------------+
     | CONTENT.rst               | This Content description file                        |
@@ -15,9 +13,6 @@ The contents of the package
     | dev-requirements.txt      | PIP requirements file for development dependencies   |
     +---------------------------+------------------------------------------------------+
     | Dockerfile                | assemble an image, install all dependencies via pip  |
-    +---------------------------+------------------------------------------------------+
-    | ez_setup.py               | Bootstrap distribute installation file, can also be  |
-    |                           | run to install or upgrade setuptools.                |
     +---------------------------+------------------------------------------------------+
     | generate_family_file.py   | Creates a new family file.                           |
     +---------------------------+------------------------------------------------------+
@@ -31,14 +26,13 @@ The contents of the package
     +---------------------------+------------------------------------------------------+
     | README.rst                | Short info string used by Pywikibot Nightlies        |
     +---------------------------+------------------------------------------------------+
-    | README-conversion.txt     | Guide to converting bot scripts from version 1       |
-    |                           | of the Pywikibot framework to version 3              |
-    +---------------------------+------------------------------------------------------+
-    | requests-requirements.txt | PIP requirements file for Appveyor builds            |
+    | README-conversion.txt     | Compat to Core branch conversion hints               |
     +---------------------------+------------------------------------------------------+
     | requirements.txt          | General PIP requirements file                        |
     +---------------------------+------------------------------------------------------+
-    | setup.py                  | Installer script for Pywikibot 3.0 framework         |
+    | ROADMAP.rst               | pypi version roadmap file                            |
+    +---------------------------+------------------------------------------------------+
+    | setup.py                  | Installer script for Pywikibot framework             |
     +---------------------------+------------------------------------------------------+
     | tox.ini                   | Tests config file                                    |
     +---------------------------+------------------------------------------------------+

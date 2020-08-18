@@ -1,32 +1,26 @@
 # -*- coding: utf-8 -*-
 """SPARQL Query interface."""
 #
-# (C) Pywikibot team, 2016-2017
+# (C) Pywikibot team, 2016-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import json
-import sys
-import time
-if sys.version_info[0] > 2:
-    from urllib.parse import quote
-else:
-    from urllib2 import quote
+
+from urllib.parse import quote
 
 from requests.exceptions import Timeout
 
-from pywikibot import config, warning, Site
+from pywikibot import config, warning, Site, sleep
 from pywikibot.comms import http
-from pywikibot.tools import UnicodeMixin, py2_encode_utf_8
 from pywikibot.exceptions import Error, TimeoutError
+
 
 DEFAULT_HEADERS = {'cache-control': 'no-cache',
                    'Accept': 'application/sparql-results+json'}
 
 
-class SparqlQuery(object):
+class SparqlQuery:
     """
     SPARQL Query class.
 
@@ -39,9 +33,9 @@ class SparqlQuery(object):
         Create endpoint.
 
         @param endpoint: SPARQL endpoint URL
-        @type endpoint: string
+        @type endpoint: str
         @param entity_url: URL prefix for any entities returned in a query.
-        @type entity_url: string
+        @type entity_url: str
         @param repo: The Wikibase site which we want to run queries on. If
             provided this overrides any value in endpoint and entity_url.
             Defaults to Wikidata.
@@ -51,7 +45,7 @@ class SparqlQuery(object):
         @type max_retries: int
         @param retry_wait: (optional) Minimum time in seconds to wait after an
                error, defaults to config.retry_wait seconds (doubles each retry
-               until max of 120 seconds is reached).
+               until config.retry_max is reached).
         @type retry_wait: float
         """
         # default to Wikidata
@@ -97,7 +91,7 @@ class SparqlQuery(object):
         """
         return self.last_response
 
-    def select(self, query, full_data=False, headers=DEFAULT_HEADERS):
+    def select(self, query: str, full_data=False, headers=DEFAULT_HEADERS):
         """
         Run SPARQL query and return the result.
 
@@ -105,7 +99,6 @@ class SparqlQuery(object):
         https://www.w3.org/TR/2013/REC-sparql11-results-json-20130321/
 
         @param query: Query text
-        @type query: string
         @param full_data: Whether return full data objects or only values
         @type full_data: bool
         @return: List of query results or None if query failed
@@ -117,42 +110,41 @@ class SparqlQuery(object):
             for row in data['results']['bindings']:
                 values = {}
                 for var in qvars:
-                    if var in row:
-                        if full_data:
-                            if row[var]['type'] not in VALUE_TYPES:
-                                raise ValueError('Unknown type: %s' % row[var]['type'])
-                            valtype = VALUE_TYPES[row[var]['type']]
-                            values[var] = valtype(row[var], entity_url=self.entity_url)
-                        else:
-                            values[var] = row[var]['value']
-                    else:
+                    if var not in row:
                         # var is not available (OPTIONAL is probably used)
                         values[var] = None
+                    elif full_data:
+                        if row[var]['type'] not in VALUE_TYPES:
+                            raise ValueError('Unknown type: {}'
+                                             .format(row[var]['type']))
+                        valtype = VALUE_TYPES[row[var]['type']]
+                        values[var] = valtype(row[var],
+                                              entity_url=self.entity_url)
+                    else:
+                        values[var] = row[var]['value']
                 result.append(values)
             return result
-        else:
-            return None
+        return None
 
-    def query(self, query, headers=DEFAULT_HEADERS):
+    def query(self, query: str, headers=DEFAULT_HEADERS):
         """
         Run SPARQL query and return parsed JSON result.
 
         @param query: Query text
-        @type query: string
         """
-        url = '%s?query=%s' % (self.endpoint, quote(query))
+        url = '{0}?query={1}'.format(self.endpoint, quote(query))
         while True:
             try:
                 self.last_response = http.fetch(url, headers=headers)
-                if not self.last_response.content:
-                    return None
-                try:
-                    return json.loads(self.last_response.content)
-                except ValueError:
-                    return None
             except Timeout:
                 self.wait()
                 continue
+            if not self.last_response.text:
+                return None
+            try:
+                return json.loads(self.last_response.text)
+            except ValueError:
+                return None
 
     def wait(self):
         """Determine how long to wait after a failed request."""
@@ -160,17 +152,15 @@ class SparqlQuery(object):
         if self.max_retries < 0:
             raise TimeoutError('Maximum retries attempted without success.')
         warning('Waiting {0} seconds before retrying.'.format(self.retry_wait))
-        time.sleep(self.retry_wait)
-        # double the next wait, but do not exceed 120 seconds
-        self.retry_wait = min(120, self.retry_wait * 2)
+        sleep(self.retry_wait)
+        # double the next wait, but do not exceed config.retry_max seconds
+        self.retry_wait = min(config.retry_max, self.retry_wait * 2)
 
-    def ask(self, query, headers=DEFAULT_HEADERS):
+    def ask(self, query: str, headers=DEFAULT_HEADERS) -> bool:
         """
         Run SPARQL ASK query and return boolean result.
 
         @param query: Query text
-        @type query: string
-        @rtype: bool
         """
         data = self.query(query, headers=headers)
         return data['boolean']
@@ -181,7 +171,8 @@ class SparqlQuery(object):
 
         Items are returned as Wikibase IDs.
 
-        @param query: Query string. Must contain ?{item_name} as one of the projected values.
+        @param query: Query string. Must contain ?{item_name} as one of the
+            projected values.
         @param item_name: Name of the value to extract
         @param result_type: type of the iterable in which
               SPARQL results are stored (default set)
@@ -195,27 +186,23 @@ class SparqlQuery(object):
         return result_type()
 
 
-class SparqlNode(UnicodeMixin):
+class SparqlNode:
     """Base class for SPARQL nodes."""
 
     def __init__(self, value):
         """Create a SparqlNode."""
         self.value = value
 
-    def __unicode__(self):
+    def __str__(self):
         return self.value
 
 
 class URI(SparqlNode):
     """Representation of URI result type."""
 
-    def __init__(self, data, entity_url, **kwargs):
-        """
-        Create URI object.
-
-        @type data: dict
-        """
-        super(URI, self).__init__(data.get('value'))
+    def __init__(self, data: dict, entity_url, **kwargs):
+        """Create URI object."""
+        super().__init__(data.get('value'))
         self.entity_url = entity_url
 
     def getID(self):
@@ -230,7 +217,6 @@ class URI(SparqlNode):
         else:
             return None
 
-    @py2_encode_utf_8
     def __repr__(self):
         return '<' + self.value + '>'
 
@@ -238,17 +224,12 @@ class URI(SparqlNode):
 class Literal(SparqlNode):
     """Representation of RDF literal result type."""
 
-    def __init__(self, data, **kwargs):
-        """
-        Create Literal object.
-
-        @type data: dict
-        """
-        super(Literal, self).__init__(data.get('value'))
+    def __init__(self, data: dict, **kwargs):
+        """Create Literal object."""
+        super().__init__(data.get('value'))
         self.type = data.get('datatype')
         self.language = data.get('xml:lang')
 
-    @py2_encode_utf_8
     def __repr__(self):
         if self.type:
             return self.value + '^^' + self.type
@@ -260,17 +241,12 @@ class Literal(SparqlNode):
 class Bnode(SparqlNode):
     """Representation of blank node."""
 
-    def __init__(self, data, **kwargs):
-        """
-        Create Bnode.
+    def __init__(self, data: dict, **kwargs):
+        """Create Bnode."""
+        super().__init__(data.get('value'))
 
-        @type data: dict
-        """
-        super(Bnode, self).__init__(data.get('value'))
-
-    @py2_encode_utf_8
     def __repr__(self):
-        return "_:" + self.value
+        return '_:' + self.value
 
 
 VALUE_TYPES = {'uri': URI, 'literal': Literal, 'bnode': Bnode}

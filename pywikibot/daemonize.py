@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
 """Module to daemonize the current process on Unix."""
 #
-# (C) Pywikibot team, 2007-2015
+# (C) Pywikibot team, 2007-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import codecs
 import os
+import stat
 import sys
+
+from pywikibot.tools import deprecated_args
 
 is_daemon = False
 
 
-def daemonize(close_fd=True, chdir=True, write_pid=False, redirect_std=None):
+@deprecated_args(write_pid=None)
+def daemonize(close_fd=True, chdir=True, redirect_std=None):
     """
     Daemonize the current process.
 
@@ -25,8 +27,6 @@ def daemonize(close_fd=True, chdir=True, write_pid=False, redirect_std=None):
     @type close_fd: bool
     @param chdir: Change the current working directory to /
     @type chdir: bool
-    @param write_pid: Write the pid to sys.argv[0] + '.pid'
-    @type write_pid: bool
     @param redirect_std: Filename to redirect stdout and stdin to
     @type redirect_std: str
     """
@@ -47,8 +47,13 @@ def daemonize(close_fd=True, chdir=True, write_pid=False, redirect_std=None):
                 os.close(2)
                 os.open('/dev/null', os.O_RDWR)
                 if redirect_std:
+                    # R/W mode without execute flags
+                    mode = (stat.S_IRUSR | stat.S_IWUSR
+                            | stat.S_IRGRP | stat.S_IWGRP
+                            | stat.S_IROTH | stat.S_IWOTH)
                     os.open(redirect_std,
-                            os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+                            os.O_WRONLY | os.O_APPEND | os.O_CREAT,
+                            mode)
                 else:
                     os.dup2(0, 1)
                 os.dup2(1, 2)
@@ -60,8 +65,6 @@ def daemonize(close_fd=True, chdir=True, write_pid=False, redirect_std=None):
             path = os.path.basename(sys.argv[0]) + '.pid'
             with codecs.open(path, 'w', 'utf-8') as f:
                 f.write(str(pid))
-            os._exit(0)
-    else:
-        # Exit to return control to the terminal
-        # os._exit to prevent the cleanup to run
-        os._exit(0)
+    # Exit to return control to the terminal
+    # os._exit to prevent the cleanup to run
+    os._exit(0)

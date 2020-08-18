@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Tests for the Timestamp class."""
 #
-# (C) Pywikibot team, 2014-2017
+# (C) Pywikibot team, 2014-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import calendar
 import datetime
@@ -41,8 +41,10 @@ class TestTimestamp(TestCase):
 
     def test_iso_format(self):
         """Test conversion from and to ISO format."""
-        SEP = 'T'
+        sep = 'T'
         t1 = Timestamp.utcnow()
+        if not t1.microsecond:  # T199179: ensure microsecond is not 0
+            t1 = t1.replace(microsecond=1)
         ts1 = t1.isoformat()
         t2 = Timestamp.fromISOformat(ts1)
         ts2 = t2.isoformat()
@@ -51,22 +53,22 @@ class TestTimestamp(TestCase):
         t1 = t1.replace(microsecond=0)
         self.assertEqual(t1, t2)
         self.assertEqual(ts1, ts2)
-        date, sep, time = ts1.partition(SEP)
+        date, sep, time = ts1.partition(sep)
         time = time.rstrip('Z')
         self.assertEqual(date, str(t1.date()))
         self.assertEqual(time, str(t1.time()))
 
     def test_iso_format_with_sep(self):
         """Test conversion from and to ISO format with separator."""
-        SEP = '*'
+        sep = '*'
         t1 = Timestamp.utcnow().replace(microsecond=0)
-        ts1 = t1.isoformat(sep=SEP)
-        t2 = Timestamp.fromISOformat(ts1, sep=SEP)
-        ts2 = t2.isoformat(sep=SEP)
+        ts1 = t1.isoformat(sep=sep)
+        t2 = Timestamp.fromISOformat(ts1, sep=sep)
+        ts2 = t2.isoformat(sep=sep)
         self.assertEqual(t1, t2)
         self.assertEqual(t1, t2)
         self.assertEqual(ts1, ts2)
-        date, sep, time = ts1.partition(SEP)
+        date, sep, time = ts1.partition(sep)
         time = time.rstrip('Z')
         self.assertEqual(date, str(t1.date()))
         self.assertEqual(time, str(t1.time()))
@@ -78,14 +80,25 @@ class TestTimestamp(TestCase):
                          Timestamp.mediawikiTSFormat)
 
     def test_mediawiki_format(self):
-        """Test conversion from and to timestamp format."""
+        """Test conversion from and to Timestamp format."""
         t1 = Timestamp.utcnow()
+        if not t1.microsecond:  # T191827: ensure microsecond is not 0
+            t1 = t1.replace(microsecond=1000)
         ts1 = t1.totimestampformat()
         t2 = Timestamp.fromtimestampformat(ts1)
         ts2 = t2.totimestampformat()
         # MediaWiki timestamp format doesn't include microseconds
         self.assertNotEqual(t1, t2)
         t1 = t1.replace(microsecond=0)
+        self.assertEqual(t1, t2)
+        self.assertEqual(ts1, ts2)
+
+    def test_short_mediawiki_format(self):
+        """Test short mw timestamp conversion from and to Timestamp format."""
+        t1 = Timestamp(2018, 12, 17)
+        t2 = Timestamp.fromtimestampformat('20181217')  # short timestamp
+        ts1 = t1.totimestampformat()
+        ts2 = t2.totimestampformat()
         self.assertEqual(t1, t2)
         self.assertEqual(ts1, ts2)
 
@@ -113,7 +126,7 @@ class TestTimestamp(TestCase):
         self.assertIs(t3, NotImplemented)
 
     def test_sub_timedelta(self):
-        """Test substracting a timedelta from a Timestamp."""
+        """Test subtracting a timedelta from a Timestamp."""
         t1 = Timestamp.utcnow()
         t2 = t1 - datetime.timedelta(days=1)
         if t1.month != t2.month:

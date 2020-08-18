@@ -8,13 +8,10 @@ Usage:
 
 """
 #
-# (C) xqt, 2009-2017
-# (C) Pywikibot team, 2008-2017
+# (C) Pywikibot team, 2008-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import codecs
 import re
 
@@ -35,7 +32,9 @@ families_list = [
     'wiktionary',
 ]
 
-exceptions = ['-', 'mul']
+exceptions = {
+    'wikiversity': ['beta']
+}
 
 
 def update_family(families):
@@ -45,7 +44,7 @@ def update_family(families):
         pywikibot.output('\nChecking family %s:' % family)
 
         original = Family.load(family).languages_by_size
-        for code in exceptions:
+        for code in exceptions.get(family, []):
             if code in original:
                 original.remove(code)
         obsolete = Family.load(family).obsolete
@@ -53,7 +52,7 @@ def update_family(families):
         new = []
         table = ws.languages_by_size(family)
         for code in table:
-            if not (code in obsolete or code in exceptions):
+            if not (code in obsolete or code in exceptions.get(family, [])):
                 new.append(code)
 
         # put the missing languages to the right place
@@ -70,25 +69,25 @@ def update_family(families):
                 i -= 1
 
         if original == new:
-            pywikibot.output(u'The lists match!')
+            pywikibot.output('The lists match!')
         else:
-            pywikibot.output(u"The lists don't match, the new list is:")
-            text = '        self.languages_by_size = [\n'
-            line = ' ' * 11
+            pywikibot.output("The lists don't match, the new list is:")
+            text = '    languages_by_size = [\n'
+            line = ' ' * 7
             for code in new:
                 if len(line) + len(code) < 76:
-                    line += u" '%s'," % code
+                    line += " '%s'," % code
                 else:
                     text += '%s\n' % line
-                    line = ' ' * 11
-                    line += u" '%s'," % code
+                    line = ' ' * 7
+                    line += " '%s'," % code
             text += '%s\n' % line
-            text += u'        ]'
+            text += '    ]'
             pywikibot.output(text)
             family_file_name = 'pywikibot/families/%s_family.py' % family
             with codecs.open(family_file_name, 'r', 'utf8') as family_file:
                 family_text = family_file.read()
-            family_text = re.sub(r'(?msu)^ {8}self.languages_by_size.+?\]',
+            family_text = re.sub(r'(?msu)^ {4}languages_by_size.+?\]',
                                  text, family_text, 1)
             with codecs.open(family_file_name, 'w', 'utf8') as family_file:
                 family_file.write(family_text)

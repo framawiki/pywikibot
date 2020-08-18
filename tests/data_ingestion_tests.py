@@ -2,16 +2,17 @@
 # -*- coding: utf-8 -*-
 """Unit tests for data_ingestion.py script."""
 #
-# (C) Pywikibot team, 2012-2015
+# (C) Pywikibot team, 2012-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 from scripts import data_ingestion
 
 from tests import join_data_path, join_images_path
 from tests.aspects import unittest, TestCase, ScriptMainTestCase
+from tests.utils import empty_sites
 
 
 class TestPhoto(TestCase):
@@ -31,10 +32,14 @@ class TestPhoto(TestCase):
     def setUp(self):
         """Set up unit test."""
         super(TestPhoto, self).setUp()
+        url = ('http://upload.wikimedia.org/wikipedia/commons/f/'
+               'fc/MP_sounds.png')
+
+        meta_url = 'http://commons.wikimedia.org/wiki/File:Sound-icon.svg'
         self.obj = data_ingestion.Photo(
-            URL='http://upload.wikimedia.org/wikipedia/commons/f/fc/MP_sounds.png',
+            URL=url,
             metadata={'description.en': '"Sounds" icon',
-                      'source': 'http://commons.wikimedia.org/wiki/File:Sound-icon.svg',
+                      'source': meta_url,
                       'author': 'KDE artists | Silstor',
                       'license': 'LGPL',
                       'set': 'Crystal SVG icon set',
@@ -49,7 +54,8 @@ class TestPhoto(TestCase):
     def test_findDuplicateImages(self):
         """Test finding duplicates on Wikimedia Commons."""
         duplicates = self.obj.findDuplicateImages()
-        self.assertIn('MP sounds.png', [dup.replace("_", " ") for dup in duplicates])
+        self.assertIn('MP sounds.png',
+                      [dup.replace('_', ' ') for dup in duplicates])
 
     def test_getTitle(self):
         """Test getTitle()."""
@@ -86,8 +92,9 @@ class TestCSVReader(TestCase):
 
     def test_PhotoURL(self):
         """Test PhotoURL()."""
-        self.assertEqual(self.obj.URL,
-                         'http://upload.wikimedia.org/wikipedia/commons/f/fc/MP_sounds.png')
+        self.assertEqual(
+            self.obj.URL,
+            'http://upload.wikimedia.org/wikipedia/commons/f/fc/MP_sounds.png')
 
     def test_getTitle(self):
         """Test getTitle()."""
@@ -112,14 +119,15 @@ class TestDataIngestionBot(ScriptMainTestCase):
 
     """Test TestDataIngestionBot class."""
 
-    family = 'test'
+    family = 'wikipedia'
     code = 'test'
 
     def test_existing_file(self):
         """Test uploading a file that already exists."""
-        data_ingestion.main(
-            '-csvdir:tests/data',
-            '-page:User:John_Vandenberg/data_ingestion_test_template')
+        with empty_sites():
+            data_ingestion.main(
+                '-csvdir:tests/data',
+                '-page:User:John_Vandenberg/data_ingestion_test_template')
 
 
 if __name__ == '__main__':  # pragma: no cover

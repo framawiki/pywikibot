@@ -24,7 +24,8 @@ Command line options:
            more mistakes. This only works with image replacement, not image
            removal.
 
-Examples:
+Examples
+--------
 
 The image "FlagrantCopyvio.jpg" is about to be deleted, so let's first remove
 it from everything that displays it:
@@ -37,17 +38,19 @@ The image "Flag.svg" has been uploaded, making the old "Flag.jpg" obsolete:
 
 """
 #
-# (C) Pywikibot team, 2013-2017
+# (C) Pywikibot team, 2013-2018
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import re
 
 import pywikibot
 
-from pywikibot import i18n, pagegenerators, Bot
+from pywikibot import i18n, pagegenerators
+
+from pywikibot.bot import SingleSiteBot
 
 from scripts.replace import ReplaceRobot as ReplaceBot
 
@@ -58,22 +61,22 @@ class ImageRobot(ReplaceBot):
 
     def __init__(self, generator, old_image, new_image=None, **kwargs):
         """
-        Constructor.
+        Initializer.
 
         @param generator: the pages to work on
         @type generator: iterable
         @param old_image: the title of the old image (without namespace)
-        @type old_image: unicode
+        @type old_image: str
         @param new_image: the title of the new image (without namespace), or
                           None if you want to remove the image
-        @type new_image: unicode or None
+        @type new_image: str or None
         """
         self.availableOptions.update({
             'summary': None,
             'loose': False,
         })
 
-        Bot.__init__(self, generator=generator, **kwargs)
+        SingleSiteBot.__init__(self, generator=generator, **kwargs)
 
         self.old_image = old_image
         self.new_image = new_image
@@ -89,8 +92,8 @@ class ImageRobot(ReplaceBot):
 
         namespace = self.site.namespaces[6]
         if namespace.case == 'first-letter':
-            case = re.escape(self.old_image[0].upper() +
-                             self.old_image[0].lower())
+            case = re.escape(self.old_image[0].upper()
+                             + self.old_image[0].lower())
             escaped = '[' + case + ']' + re.escape(self.old_image[1:])
         else:
             escaped = re.escape(self.old_image)
@@ -108,9 +111,10 @@ class ImageRobot(ReplaceBot):
         if self.new_image:
             if not self.getOption('loose'):
                 replacements.append((image_regex,
-                                     u'[[%s:%s\\g<parameters>]]'
-                                     % (self.site.namespaces.FILE.custom_name,
-                                        self.new_image)))
+                                     '[[{}:{}\\g<parameters>]]'
+                                     .format(
+                                         self.site.namespaces.FILE.custom_name,
+                                         self.new_image)))
             else:
                 replacements.append((image_regex, self.new_image))
         else:
@@ -129,7 +133,7 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     old_image = None
     new_image = None
@@ -155,15 +159,13 @@ def main(*args):
         site = pywikibot.Site()
         old_imagepage = pywikibot.FilePage(site, old_image)
         gen = pagegenerators.FileLinksGenerator(old_imagepage)
-        preloadingGen = pagegenerators.PreloadingGenerator(gen)
-        bot = ImageRobot(preloadingGen, old_image, new_image,
+        preloading_gen = pagegenerators.PreloadingGenerator(gen)
+        bot = ImageRobot(preloading_gen, old_image, new_image,
                          site=site, **options)
         bot.run()
-        return True
     else:
         pywikibot.bot.suggest_help(missing_parameters=['old image'])
-        return False
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

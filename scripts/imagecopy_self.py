@@ -9,18 +9,19 @@ This bot uses a graphical interface and may not work from commandline
 only environment.
 
 Examples
+--------
 
 Work on a single file:
 
-    python pwb.py imagecopy.py -page:file:<filename>
+    python pwb.py imagecopy -page:file:<filename>
 
 Work on all images in a category:<cat>:
 
-    python pwb.py imagecopy.py -cat:<cat>
+    python pwb.py imagecopy -cat:<cat>
 
 Work on all images which transclude a template:
 
-    python pwb.py imagecopy.py -transcludes:<template>
+    python pwb.py imagecopy -transcludes:<template>
 
 See pagegenerators.py for more ways to get a list of images.
 By default the bot works on your home wiki (set in user-config)
@@ -31,30 +32,18 @@ Use -nochecktemplate if you don't want to add the check template. Be sure to
 check it yourself.
 """
 #
-# Based on upload.py by:
-# (C) Rob W.W. Hooft, Andre Engels 2003-2007
-# (C) Wikipedian, Keichwa, Leogregianin, Rikwade, Misza13 2003-2007
-#
-# New bot by:
-# (C) Kyle/Orgullomoore, Siebrand Mazeland 2007
-#
-# Another rewrite by:
-# (C) Multichill 2008
-#
-# English Wikipedia specific bot by:
-# (C) Multichill 2010-2012
-#
-# (C) Pywikibot team, 2010-2018
+# (C) Pywikibot team, 2003-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import re
 import threading
 import webbrowser
 
 from datetime import datetime
+from textwrap import fill
 
 import pywikibot
 
@@ -79,82 +68,82 @@ except ImportError as _tk_error:
 NL = ''
 
 nowCommonsTemplate = {
-    'de': u'{{NowCommons|%s}}',
+    'de': '{{NowCommons|%s}}',
     'en': ('{{NowCommons|1=File:%s|date=~~~~~|'
            'reviewer={{subst:REVISIONUSER}}}}'),
-    'lb': u'{{Elo op Commons|%s}}',
-    'nds-nl': u'{{NoenCommons|1=File:%s}}',
+    'lb': '{{Elo op Commons|%s}}',
+    'nds-nl': '{{NoenCommons|1=File:%s}}',
     'shared': ('{{NowCommons|1=File:%s|date=~~~~~|'
                'reviewer={{subst:REVISIONUSER}}}}'),
 }
 
 moveToCommonsTemplate = {
     'de': ['NowCommons', 'NC', 'NCT', 'Nowcommons'],
-    'en': [u'Commons ok', u'Copy to Wikimedia Commons', u'Move to commons',
-           u'Movetocommons', u'To commons',
-           u'Copy to Wikimedia Commons by BotMultichill'],
-    'lb': [u'Move to commons'],
-    'nds-nl': [u'Noar Commons', u'VNC'],
-    'shared': [u'Move'],
+    'en': ['Commons ok', 'Copy to Wikimedia Commons', 'Move to commons',
+           'Movetocommons', 'To commons',
+           'Copy to Wikimedia Commons by BotMultichill'],
+    'lb': ['Move to commons'],
+    'nds-nl': ['Noar Commons', 'VNC'],
+    'shared': ['Move'],
 }
 
 skipTemplates = {
-    'de': [u'Löschprüfung',
-           u'NoCommons',
-           u'NowCommons',
-           u'NowCommons/Mängel',
-           u'NowCommons-Überprüft',
-           u'Wappenrecht',
+    'de': ['Löschprüfung',
+           'NoCommons',
+           'NowCommons',
+           'NowCommons/Mängel',
+           'NowCommons-Überprüft',
+           'Wappenrecht',
            ],
-    'en': [u'Db-f1',
-           u'Db-f2',
-           u'Db-f3',
-           u'Db-f7',
-           u'Db-f8',
-           u'Db-f9',
-           u'Db-f10',
-           u'Do not move to Commons',
-           u'NowCommons',
-           u'CommonsNow',
-           u'Nowcommons',
-           u'NowCommonsThis',
-           u'Nowcommons2',
-           u'NCT',
-           u'Nowcommonsthis',
-           u'Moved to commons',
-           u'Now Commons',
-           u'Now at commons',
-           u'Db-nowcommons',
-           u'WikimediaCommons',
-           u'Now commons',
-           u'Di-no source',
-           u'Di-no license',
-           u'Di-no permission',
-           u'Di-orphaned fair use',
-           u'Di-no source no license',
-           u'Di-replaceable fair use',
-           u'Di-no fair use rationale',
-           u'Di-disputed fair use rationale',
-           u'Puf',
-           u'PUI',
-           u'Pui',
-           u'Ffd',
-           u'PD-user',  # Only the self templates are supported for now.
-           u'Ticket Scan',
-           u'Non-free 2D art',
-           u'Non-free 3D art',
-           u'Non-free architectural work',
-           u'Non-free fair use in',
+    'en': ['Db-f1',
+           'Db-f2',
+           'Db-f3',
+           'Db-f7',
+           'Db-f8',
+           'Db-f9',
+           'Db-f10',
+           'Do not move to Commons',
+           'NowCommons',
+           'CommonsNow',
+           'Nowcommons',
+           'NowCommonsThis',
+           'Nowcommons2',
+           'NCT',
+           'Nowcommonsthis',
+           'Moved to commons',
+           'Now Commons',
+           'Now at commons',
+           'Db-nowcommons',
+           'WikimediaCommons',
+           'Now commons',
+           'Di-no source',
+           'Di-no license',
+           'Di-no permission',
+           'Di-orphaned fair use',
+           'Di-no source no license',
+           'Di-replaceable fair use',
+           'Di-no fair use rationale',
+           'Di-disputed fair use rationale',
+           'Puf',
+           'PUI',
+           'Pui',
+           'Ffd',
+           'PD-user',  # Only the self templates are supported for now.
+           'Ticket Scan',
+           'Non-free 2D art',
+           'Non-free 3D art',
+           'Non-free architectural work',
+           'Non-free fair use in',
            ],
-    'lb': [u'Läschen',
+    'lb': ['Läschen',
            ],
-    'nds-nl': [u'Allinnig Wikipedie',
-               u'Bepark',
-               u'Gienidee',
-               u'NoenCommons',
-               u'NowCommons',
+    'nds-nl': ['Allinnig Wikipedie',
+               'Bepark',
+               'Gienidee',
+               'NoenCommons',
+               'NowCommons',
                ],
-    'shared': [u''],
+    'shared': [''],
 }
 
 
@@ -266,48 +255,48 @@ informationTemplate = {
 
 informationFields = {
     'de': {
-        u'anmerkungen': u'remarks',  # FIXME: More flexible
-        u'beschreibung': u'description',
-        u'quelle': u'source',
-        u'datum': u'date',
-        u'urheber': u'author',
-        u'permission': u'permission',
-        u'andere Versione': u'other versions',
+        'anmerkungen': 'remarks',  # FIXME: More flexible
+        'beschreibung': 'description',
+        'quelle': 'source',
+        'datum': 'date',
+        'urheber': 'author',
+        'permission': 'permission',
+        'andere Versione': 'other versions',
     },
     'en': {
-        u'location': u'remarks',
-        u'description': u'description',
-        u'source': u'source',
-        u'date': u'date',
-        u'author': u'author',
-        u'permission': u'permission',
-        u'other versions': u'other versions',
+        'location': 'remarks',
+        'description': 'description',
+        'source': 'source',
+        'date': 'date',
+        'author': 'author',
+        'permission': 'permission',
+        'other versions': 'other versions',
     },
     'lb': {
-        u'location': u'remarks',
-        u'description': u'description',
-        u'source': u'source',
-        u'date': u'date',
-        u'author': u'author',
-        u'permission': u'permission',
-        u'other versions': u'other versions',
+        'location': 'remarks',
+        'description': 'description',
+        'source': 'source',
+        'date': 'date',
+        'author': 'author',
+        'permission': 'permission',
+        'other versions': 'other versions',
     },
     'nds-nl': {
-        u'location': u'remarks',
-        u'description': u'description',
-        u'source': u'source',
-        u'date': u'date',
-        u'author': u'author',
-        u'permission': u'permission',
-        u'other versions': u'other versions',
+        'location': 'remarks',
+        'description': 'description',
+        'source': 'source',
+        'date': 'date',
+        'author': 'author',
+        'permission': 'permission',
+        'other versions': 'other versions',
     },
     'shared': {
-        u'description': u'description',
-        u'source': u'source',
-        u'date': u'date',
-        u'author': u'author',
-        u'permission': u'permission',
-        u'other versions': u'other versions',
+        'description': 'description',
+        'source': 'source',
+        'date': 'date',
+        'author': 'author',
+        'permission': 'permission',
+        'other versions': 'other versions',
     },
 }
 
@@ -326,8 +315,8 @@ def supportedSite():
         informationTemplate,
         informationFields,
     ]
-    for l in lists:
-        if not l.get(lang):
+    for item in lists:
+        if not item.get(lang):
             return False
     return True
 
@@ -337,7 +326,7 @@ class imageFetcher(threading.Thread):
     """Tries to fetch information for all images in the generator."""
 
     def __init__(self, pagegenerator, prefetchQueue):
-        """Constructor."""
+        """Initializer."""
         self.pagegenerator = pagegenerator
         self.prefetchQueue = prefetchQueue
         imagerecat.initLists()
@@ -360,8 +349,8 @@ class imageFetcher(threading.Thread):
             # First do autoskip.
             if self.doiskip(imagepage):
                 pywikibot.output(
-                    u'Skipping %s : Got a template on the skip list.'
-                    % page.title())
+                    'Skipping {} : Got a template on the skip list.'
+                    .format(page.title()))
                 return False
 
             text = imagepage.get()
@@ -372,8 +361,8 @@ class imageFetcher(threading.Thread):
                     foundMatch = True
             if not foundMatch:
                 pywikibot.output(
-                    u'Skipping %s : No suitable license template was found.'
-                    % page.title())
+                    'Skipping {} : No suitable license template was found.'
+                    .format(page.title()))
                 return False
             self.prefetchQueue.put(self.getNewFields(imagepage))
 
@@ -384,37 +373,39 @@ class imageFetcher(threading.Thread):
 
         """
         for template in imagepage.templates():
-            if template in skipTemplates[imagepage.site.lang]:
+            template_title = template.title(with_ns=False)
+            if template_title in skipTemplates[imagepage.site.lang]:
                 pywikibot.output(
-                    u'Found %s which is on the template skip list' % template)
+                    'Found {} which is on the template skip list'
+                    .format(template_title))
                 return True
         return False
 
     def getNewFields(self, imagepage):
         """Build a new description based on the imagepage."""
-        if u'{{Information' in imagepage.get() or \
-           u'{{information' in imagepage.get():
+        if '{{Information' in imagepage.get() or \
+           '{{information' in imagepage.get():
             (description, date, source, author, permission,
              other_versions) = self.getNewFieldsFromInformation(imagepage)
         else:
             (description, date, source,
              author) = self.getNewFieldsFromFreetext(imagepage)
-            permission = u''
-            other_versions = u''
+            permission = ''
+            other_versions = ''
 
         licensetemplate = self.getNewLicensetemplate(imagepage)
         categories = self.getNewCategories(imagepage)
-        return {u'imagepage': imagepage,
-                u'filename': imagepage.title(withNamespace=False),
-                u'description': description,
-                u'date': date,
-                u'source': source,
-                u'author': author,
-                u'permission': permission,
-                u'other_versions': other_versions,
-                u'licensetemplate': licensetemplate,
-                u'categories': categories,
-                u'skip': False}
+        return {'imagepage': imagepage,
+                'filename': imagepage.title(with_ns=False),
+                'description': description,
+                'date': date,
+                'source': source,
+                'author': author,
+                'permission': permission,
+                'other_versions': other_versions,
+                'licensetemplate': licensetemplate,
+                'categories': categories,
+                'skip': False}
 
     def getNewFieldsFromInformation(self, imagepage):
         """Extract fields from current information template for new template.
@@ -427,28 +418,24 @@ class imageFetcher(threading.Thread):
         # FIXME: The implementation for German has to be checked for the
         #        "strange" fields
 
-        description = u''
-        source = u''
-        date = u''
-        author = u''
-        permission = u''
-        other_versions = u''
+        description = ''
+        permission = ''
+        other_versions = ''
         contents = {}
 
         for key, value in informationFields[imagepage.site.lang].items():
-            contents[value] = u''
+            contents[value] = ''
 
-        templates = imagepage.templatesWithParams()
         information = informationTemplate[imagepage.site.lang]
         fields = informationFields[imagepage.site.lang]
 
-        for (template, params) in templates:
-            if template == information:
+        for template, params in imagepage.templatesWithParams():
+            if template.title() == information:
                 for param in params:
                     # Split at =
-                    (field, sep, value) = param.partition(u'=')
+                    field, sep, value = param.partition('=')
                     # To lowercase, remove underscores and strip of spaces
-                    field = field.lower().replace(u'_', u' ').strip()
+                    field = field.lower().replace('_', ' ').strip()
                     key = fields.get(field)
                     # See if first part is in fields list
                     if key:
@@ -460,49 +447,49 @@ class imageFetcher(threading.Thread):
 
         # Description
         # FIXME: Add {{<lang>|<original text>}} if <lang is valid at Commons
-        if contents[u'description']:
-            description = self.convertLinks(contents[u'description'],
+        if contents['description']:
+            description = self.convertLinks(contents['description'],
                                             imagepage.site())
-        if contents.get(u'remarks') and contents[u'remarks']:
-            if description == u'':
-                description = self.convertLinks(contents[u'remarks'],
+        if contents.get('remarks') and contents['remarks']:
+            if description == '':
+                description = self.convertLinks(contents['remarks'],
                                                 imagepage.site())
             else:
-                description += u'<BR/>\n' + self.convertLinks(
-                    contents[u'remarks'], imagepage.site())
+                description += '<BR/>\n' + self.convertLinks(
+                    contents['remarks'], imagepage.site())
 
         # Source
         source = self.getSource(imagepage,
-                                source=self.convertLinks(contents[u'source'],
+                                source=self.convertLinks(contents['source'],
                                                          imagepage.site()))
 
         # Date
-        if contents[u'date']:
-            date = contents[u'date']
+        if contents['date']:
+            date = contents['date']
         else:
             date = self.getUploadDate(imagepage)
 
         # Author
-        if not (contents[u'author'] == u'' or
-                contents[u'author'] == self.getAuthor(imagepage)):
-            author = self.convertLinks(contents[u'author'], imagepage.site())
+        if not (contents['author'] == ''
+                or contents['author'] == self.getAuthor(imagepage)):
+            author = self.convertLinks(contents['author'], imagepage.site())
         else:
             author = self.getAuthorText(imagepage)
 
         # Permission
         # Still have to filter out crap like "see below" or "yes"
-        if contents[u'permission']:
-            # Strip of the license temlate if it's in the permission section
+        if contents['permission']:
+            # Strip of the license template if it's in the permission section
             for (regex, repl) in licenseTemplates[imagepage.site.lang]:
-                contents[u'permission'] = re.sub(regex, u'',
-                                                 contents[u'permission'],
-                                                 flags=re.IGNORECASE)
-            permission = self.convertLinks(contents[u'permission'],
+                contents['permission'] = re.sub(regex, '',
+                                                contents['permission'],
+                                                flags=re.IGNORECASE)
+            permission = self.convertLinks(contents['permission'],
                                            imagepage.site())
 
         # Other_versions
-        if contents[u'other versions']:
-            other_versions = self.convertLinks(contents[u'other versions'],
+        if contents['other versions']:
+            other_versions = self.convertLinks(contents['other versions'],
                                                imagepage.site())
 
         return (description, date, source, author, permission, other_versions)
@@ -510,17 +497,14 @@ class imageFetcher(threading.Thread):
     def getNewFieldsFromFreetext(self, imagepage):
         """Extract fields from free text for the new information template."""
         text = imagepage.get()
-        # text = re.sub(u'== Summary ==', u'', text, re.IGNORECASE)
-        # text = re.sub(u'== Licensing ==', u'', text, re.IGNORECASE)
-        # text = re.sub('\{\{(self|self2)\|[^\}]+\}\}', '', text, re.IGNORECASE)
 
         for toRemove in sourceGarbage[imagepage.site.lang]:
-            text = re.sub(toRemove, u'', text, flags=re.IGNORECASE)
+            text = re.sub(toRemove, '', text, flags=re.IGNORECASE)
 
         for (regex, repl) in licenseTemplates[imagepage.site.lang]:
-            text = re.sub(regex, u'', text, flags=re.IGNORECASE)
+            text = re.sub(regex, '', text, flags=re.IGNORECASE)
 
-        text = pywikibot.removeCategoryLinks(text, imagepage.site()).strip()
+        text = pywikibot.removeCategoryLinks(text, imagepage.site())
 
         description = self.convertLinks(text.strip(), imagepage.site())
         date = self.getUploadDate(imagepage)
@@ -535,23 +519,24 @@ class imageFetcher(threading.Thread):
         information template. If we really have nothing better.
 
         """
-        uploadtime = imagepage.getFileVersionHistory()[-1][0]
-        uploadDatetime = datetime.strptime(uploadtime, u'%Y-%m-%dT%H:%M:%SZ')
-        return (u'{{Date|' + str(uploadDatetime.year) + u'|' +
-                str(uploadDatetime.month) + u'|' + str(uploadDatetime.day) +
-                u'}} (original upload date)')
+        uploadtime = imagepage.get_file_history()[-1][0]
+        uploadDatetime = datetime.strptime(uploadtime, '%Y-%m-%dT%H:%M:%SZ')
+        return ('{{Date|%s|%s|%s}} (original upload date)'
+                % (str(uploadDatetime.year),
+                   str(uploadDatetime.month),
+                   str(uploadDatetime.day)))
 
-    def getSource(self, imagepage, source=u''):
+    def getSource(self, imagepage, source=''):
         """Get text to put in the source field of new information template."""
         site = imagepage.site()
         lang = site.code
         family = site.family.name
-        if source == u'':
-            source = u'{{Own}}'
+        if source == '':
+            source = '{{Own}}'
 
-        return (source.strip() +
-                '<BR />Transferred from [http://%(lang)s.%(family)s.org '
-                '%(lang)s.%(family)s]') % {u'lang': lang, u'family': family}
+        return (source.strip()
+                + '<BR />Transferred from [http://%(lang)s.%(family)s.org '
+                '%(lang)s.%(family)s]') % {'lang': lang, 'family': family}
 
     def getAuthorText(self, imagepage):
         """Get uploader to put in the author field of information template."""
@@ -562,12 +547,12 @@ class imageFetcher(threading.Thread):
         firstuploader = self.getAuthor(imagepage)
         return ('[[:%(lang)s:User:%(firstuploader)s|%(firstuploader)s]] at '
                 '[http://%(lang)s.%(family)s.org %(lang)s.%(family)s]'
-                % {u'lang': lang, u'family': family,
-                   u'firstuploader': firstuploader})
+                % {'lang': lang, 'family': family,
+                   'firstuploader': firstuploader})
 
     def getAuthor(self, imagepage):
         """Get the first uploader."""
-        return imagepage.getFileVersionHistory()[-1][1].strip()
+        return imagepage.get_file_history()[-1][1].strip()
 
     def convertLinks(self, text, sourceSite):
         """Convert links from the current wiki to Commons."""
@@ -578,8 +563,8 @@ class imageFetcher(threading.Thread):
             (r'\[\[([^\[\]\|]+)\]\]', r'[[:%(lang)s:\1|\1]]'),
         ]
         for (regex, replacement) in conversions:
-            text = re.sub(regex, replacement % {u'lang': lang,
-                                                u'family': family}, text)
+            text = re.sub(regex, replacement % {'lang': lang,
+                                                'family': family}, text)
         return text
 
     def getNewLicensetemplate(self, imagepage):
@@ -588,16 +573,16 @@ class imageFetcher(threading.Thread):
         site = imagepage.site()
         lang = site.code
         family = site.family.name
-        result = u''
+        result = ''
         for (regex,
              replacement) in licenseTemplates[imagepage.site.lang]:
             match = re.search(regex, text, flags=re.IGNORECASE)
             if match:
                 result = re.sub(regex, replacement, match.group(0),
                                 flags=re.IGNORECASE)
-                return result % {u'author': self.getAuthor(imagepage),
-                                 u'lang': lang,
-                                 u'family': family}
+                return result % {'author': self.getAuthor(imagepage),
+                                 'lang': lang,
+                                 'family': family}
         return result
 
     def getNewCategories(self, imagepage):
@@ -606,12 +591,12 @@ class imageFetcher(threading.Thread):
         Don't forget to filter.
 
         """
-        result = u''
+        result = ''
         (commonshelperCats, usage,
          galleries) = imagerecat.getCommonshelperCats(imagepage)
         newcats = imagerecat.applyAllFilters(commonshelperCats)
         for newcat in newcats:
-            result += u'[[Category:' + newcat + u']] '
+            result += '[[Category:' + newcat + ']] '
         return result
 
 
@@ -620,7 +605,7 @@ class userInteraction(threading.Thread):
     """Prompt all images to the user."""
 
     def __init__(self, prefetchQueue, uploadQueue):
-        """Constructor."""
+        """Initializer."""
         self.prefetchQueue = prefetchQueue
         self.uploadQueue = uploadQueue
         self.autonomous = False
@@ -650,29 +635,29 @@ class userInteraction(threading.Thread):
             # already taken.
             CommonsPage = pywikibot.Page(pywikibot.Site('commons',
                                                         'commons'),
-                                         u'File:' + fields.get('filename'))
+                                         'File:' + fields.get('filename'))
             if CommonsPage.exists():
                 return False
         else:
             while True:
-                # Do the TkdialogICS to accept/reject and change te name
+                # Do the TkdialogICS to accept/reject and change the name
                 fields = TkdialogICS(fields).getnewmetadata()
 
                 if fields.get('skip'):
-                    pywikibot.output(u'Skipping %s : User pressed skip.'
-                                     % fields.get('imagepage').title())
+                    pywikibot.output('Skipping {} : User pressed skip.'
+                                     .format(fields.get('imagepage').title()))
                     return False
 
                 # Check if the image already exists
                 CommonsPage = pywikibot.Page(pywikibot.Site('commons',
                                                             'commons'),
-                                             u'File:' + fields.get('filename'))
+                                             'File:' + fields.get('filename'))
                 if not CommonsPage.exists():
                     break
                 else:
                     pywikibot.output('Image already exists, pick another name '
                                      'or skip this image')
-                    # We dont overwrite images, pick another name, go to the
+                    # We don't overwrite images, pick another name, go to the
                     # start of the loop
 
         # Put the fields in the queue to be uploaded
@@ -684,13 +669,13 @@ class TkdialogICS(Tkdialog):
     """The dialog window for image info."""
 
     def __init__(self, fields):
-        """Constructor.
+        """Initializer.
 
         fields:
             imagepage, description, date, source, author, licensetemplate,
             categories
         """
-        """Constructor."""
+        """Initializer."""
         # Check if `Tkinter` wasn't imported
         if isinstance(Tkinter, ImportError):
             raise Tkinter
@@ -718,7 +703,7 @@ class TkdialogICS(Tkdialog):
         self.skip = False
 
         # Start building the page
-        self.root.geometry("1500x400+100-100")
+        self.root.geometry('1500x400+100-100')
         self.root.title(self.filename)
 
         self.url = self.imagepage.permalink()
@@ -738,10 +723,10 @@ class TkdialogICS(Tkdialog):
             self.root, text='The old description was : ')
         self.new_description_label = Tkinter.Label(
             self.root, text='The new fields are : ')
-        self.filename_label = Tkinter.Label(self.root, text=u'Filename : ')
+        self.filename_label = Tkinter.Label(self.root, text='Filename : ')
         self.information_description_label = Tkinter.Label(
             self.root, text='Description : ')
-        self.information_date_label = Tkinter.Label(self.root, text=u'Date : ')
+        self.information_date_label = Tkinter.Label(self.root, text='Date : ')
         self.information_source_label = Tkinter.Label(self.root,
                                                       text='Source : ')
         self.information_author_label = Tkinter.Label(self.root,
@@ -754,7 +739,7 @@ class TkdialogICS(Tkdialog):
         self.information_licensetemplate_label = Tkinter.Label(
             self.root, text='License : ')
         self.information_categories_label = Tkinter.Label(
-            self.root, text=u'Categories : ')
+            self.root, text='Categories : ')
 
         self.filename_field = Tkinter.Entry(self.root)
         self.information_description = Tkinter.Entry(self.root)
@@ -848,17 +833,17 @@ class TkdialogICS(Tkdialog):
         """Activate dialog and return new name and if the image is skipped."""
         self.root.mainloop()
 
-        return {u'imagepage': self.imagepage,
-                u'filename': self.filename,
-                u'description': self.description,
-                u'date': self.date,
-                u'source': self.source,
-                u'author': self.author,
-                u'permission': self.permission,
-                u'other_versions': self.other_versions,
-                u'licensetemplate': self.licensetemplate,
-                u'categories': self.categories,
-                u'skip': self.skip}
+        return {'imagepage': self.imagepage,
+                'filename': self.filename,
+                'description': self.description,
+                'date': self.date,
+                'source': self.source,
+                'author': self.author,
+                'permission': self.permission,
+                'other_versions': self.other_versions,
+                'licensetemplate': self.licensetemplate,
+                'categories': self.categories,
+                'skip': self.skip}
 
     def open_in_browser(self):
         """The user pressed the View in browser button."""
@@ -870,7 +855,7 @@ class uploader(threading.Thread):
     """Upload all images."""
 
     def __init__(self, uploadQueue):
-        """Constructor."""
+        """Initializer."""
         self.uploadQueue = uploadQueue
         self.checktemplate = True
         threading.Thread.__init__(self)
@@ -896,10 +881,10 @@ class uploader(threading.Thread):
         pywikibot.output(cid)
         bot = UploadRobot(url=fields.get('imagepage').fileUrl(),
                           description=cid,
-                          useFilename=fields.get('filename'),
-                          keepFilename=True, verifyDescription=False,
-                          ignoreWarning=True,
-                          targetSite=pywikibot.Site('commons', 'commons'))
+                          use_filename=fields.get('filename'),
+                          keep_filename=True, verify_description=False,
+                          ignore_warning=True,
+                          target_site=pywikibot.Site('commons', 'commons'))
         bot.run()
 
         self.tagNowcommons(fields.get('imagepage'), fields.get('filename'))
@@ -911,7 +896,7 @@ class uploader(threading.Thread):
         lang = site.code
         family = site.family.name
 
-        cid = u''
+        cid = ''
         if self.checktemplate:
             cid += ('\n{{BotMoveToCommons|%(lang)s.%(family)s'
                     '|year={{subst:CURRENTYEAR}}'
@@ -919,24 +904,24 @@ class uploader(threading.Thread):
                     '|day={{subst:CURRENTDAY}}}}\n'
                     % {'lang': lang, 'family': family}
                     )
-        cid += u'== {{int:filedesc}} ==\n'
-        cid += u'{{Information\n'
-        cid += u'|description=%(description)s\n' % fields
-        cid += u'|date=%(date)s\n' % fields
-        cid += u'|source=%(source)s\n' % fields
-        cid += u'|author=%(author)s\n' % fields
-        cid += u'|permission=%(permission)s\n' % fields
-        cid += u'|other_versions=%(other_versions)s\n' % fields
-        cid += u'}}\n'
-        cid += u'== {{int:license}} ==\n'
-        cid += u'%(licensetemplate)s\n' % fields
-        cid += u'\n'
+        cid += '== {{int:filedesc}} ==\n'
+        cid += '{{Information\n'
+        cid += '|description=%(description)s\n' % fields
+        cid += '|date=%(date)s\n' % fields
+        cid += '|source=%(source)s\n' % fields
+        cid += '|author=%(author)s\n' % fields
+        cid += '|permission=%(permission)s\n' % fields
+        cid += '|other_versions=%(other_versions)s\n' % fields
+        cid += '}}\n'
+        cid += '== {{int:license}} ==\n'
+        cid += '%(licensetemplate)s\n' % fields
+        cid += '\n'
         cid += self.getOriginalUploadLog(fields.get('imagepage'))
-        cid += u'__NOTOC__\n'
-        if fields.get('categories').strip() == u'':
-            cid = cid + u'{{Subst:Unc}}'
+        cid += '__NOTOC__\n'
+        if fields.get('categories').strip() == '':
+            cid = cid + '{{Subst:Unc}}'
         else:
-            cid = cid + u'%(categories)s\n' % fields
+            cid = cid + '%(categories)s\n' % fields
         return cid
 
     def getOriginalUploadLog(self, imagepage):
@@ -945,7 +930,7 @@ class uploader(threading.Thread):
         @param imagepage: The file page to retrieve the log.
         @type imagepage: pywikibot.FilePage
         """
-        filehistory = imagepage.getFileVersionHistory()
+        filehistory = imagepage.get_file_history()
         filehistory.reverse()
 
         site = imagepage.site()
@@ -953,23 +938,22 @@ class uploader(threading.Thread):
         family = site.family.name
 
         sourceimage = imagepage.site.get_address(
-            imagepage.title()).replace(u'&redirect=no&useskin=monobook', u'')
+            imagepage.title()).replace('&redirect=no&useskin=monobook', '')
 
-        result = u'== {{Original upload log}} ==\n'
+        result = '== {{Original upload log}} ==\n'
         result += ('The original description page is/was '
                    '[http://%(lang)s.%(family)s.org%(sourceimage)s here]. '
                    'All following user names refer to %(lang)s.%(family)s.\n'
-                   % {u'lang': lang, u'family': family,
-                      u'sourceimage': sourceimage})
+                   % {'lang': lang, 'family': family,
+                      'sourceimage': sourceimage})
         for (timestamp, username, resolution, size, comment) in filehistory:
             date = datetime.strptime(
-                timestamp, u'%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M')
+                timestamp, '%Y-%m-%dT%H:%M:%SZ').strftime('%Y-%m-%d %H:%M')
             result += (
                 '* %(date)s [[:%(lang)s:user:%(username)s|%(username)s]] '
                 "%(resolution)s (%(size)s bytes) ''"
                 "<nowiki>%(comment)s</nowiki>''\n" % {
                     'lang': lang,
-                    'family': family,
                     'date': date,
                     'username': username,
                     'resolution': resolution,
@@ -981,8 +965,8 @@ class uploader(threading.Thread):
     def tagNowcommons(self, imagepage, filename):
         """Tagged the imag which has been moved to Commons for deletion."""
         if pywikibot.Page(pywikibot.Site('commons', 'commons'),
-                          u'File:' + filename).exists():
-            # Get a fresh copy, force to get the page so we dont run into edit
+                          'File:' + filename).exists():
+            # Get a fresh copy, force to get the page so we don't run into edit
             # conflicts
             imtxt = imagepage.get(force=True)
 
@@ -990,8 +974,9 @@ class uploader(threading.Thread):
             if imagepage.site.lang in moveToCommonsTemplate:
                 for moveTemplate in moveToCommonsTemplate[
                         imagepage.site.lang]:
-                    imtxt = re.sub(r'(?i){{' + moveTemplate +
-                                   r'[^}]*}}', r'', imtxt)
+                    imtxt = re.sub(r'(?i){{' + moveTemplate + r'[^}]*}}',
+                                   r'',
+                                   imtxt)
 
             # add {{NowCommons}}
             if imagepage.site.lang in nowCommonsTemplate:
@@ -1002,7 +987,7 @@ class uploader(threading.Thread):
 
             commentText = i18n.twtranslate(
                 imagepage.site(), 'commons-file-now-available',
-                {'localfile': imagepage.title(withNamespace=False),
+                {'localfile': imagepage.title(with_ns=False),
                  'commonsfile': filename})
 
             pywikibot.showDiff(imagepage.get(), imtxt + addTemplate)
@@ -1010,18 +995,18 @@ class uploader(threading.Thread):
 
     def replaceUsage(self, imagepage, filename):
         """Replace all usage if image is uploaded under a different name."""
-        if imagepage.title(withNamespace=False) != filename:
+        if imagepage.title(with_ns=False) != filename:
             gen = pagegenerators.FileLinksGenerator(imagepage)
             preloadingGen = pagegenerators.PreloadingGenerator(gen)
 
             moveSummary = i18n.twtranslate(
                 imagepage.site(), 'commons-file-moved',
-                {'localfile': imagepage.title(withNamespace=False),
+                {'localfile': imagepage.title(with_ns=False),
                  'commonsfile': filename})
 
             imagebot = image.ImageRobot(
                 generator=preloadingGen,
-                oldImage=imagepage.title(withNamespace=False),
+                oldImage=imagepage.title(with_ns=False),
                 newImage=filename, summary=moveSummary,
                 always=True, loose=True)
             imagebot.run()
@@ -1044,18 +1029,16 @@ def main(*args):
             genFactory.handleArg(arg)
 
     pregenerator = genFactory.getCombinedGenerator(preload=True)
-    if not pregenerator:
-        pywikibot.bot.suggest_help(missing_generator=True)
-        return False
+    additional_text = ('' if supportedSite()
+                       else 'Sorry, this site is not supported (yet).')
+    if pywikibot.bot.suggest_help(missing_generator=not pregenerator,
+                                  additional_text=additional_text):
+        return
 
-    if not supportedSite():
-        pywikibot.output(u'Sorry, this site is not supported (yet).')
-        return False
-
-    pywikibot.warning(u'This is an experimental bot')
-    pywikibot.warning(u'It will only work on self published work images')
-    pywikibot.warning(u'This bot is still full of bugs')
-    pywikibot.warning(u'Use at your own risk!')
+    pywikibot.warning(fill('This is an experimental bot. '
+                           'It will only work on self published work images. '
+                           'This bot is still full of bugs. '
+                           'Use at your own risk!'))
 
     prefetchQueue = Queue(maxsize=50)
     uploadQueue = Queue(maxsize=200)
@@ -1074,8 +1057,8 @@ def main(*args):
         userInteractionThread.setAutonomous()
 
     if not checkTemplate:
-        pywikibot.output(u'No check template will be added to the uploaded '
-                         u'files.')
+        pywikibot.output('No check template will be added to the uploaded '
+                         'files.')
         uploaderThread.nochecktemplate()
 
     # Using the listed variables one may keep track of thread start status
@@ -1084,5 +1067,5 @@ def main(*args):
     # uploadDone = uploaderThread.start()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

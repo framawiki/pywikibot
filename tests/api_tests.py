@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """API test module."""
 #
-# (C) Pywikibot team, 2007-2018
+# (C) Pywikibot team, 2007-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import datetime
 import types
+
+from collections import defaultdict
+from contextlib import suppress
+from urllib.parse import unquote_to_bytes
 
 import pywikibot.data.api as api
 import pywikibot.family
@@ -17,12 +19,7 @@ import pywikibot.page
 import pywikibot.site
 
 from pywikibot.throttle import Throttle
-from pywikibot.tools import (
-    suppress_warnings,
-    MediaWikiVersion,
-    PY2,
-    UnicodeType,
-)
+from pywikibot.tools import suppress_warnings
 
 from tests.aspects import (
     unittest,
@@ -30,12 +27,8 @@ from tests.aspects import (
     DefaultSiteTestCase,
     DefaultDrySiteTestCase,
 )
-from tests.utils import allowed_failure, FakeLoginManager, PatchedHttp
-
-if not PY2:
-    from urllib.parse import unquote_to_bytes
-else:
-    from urllib import unquote_plus as unquote_to_bytes
+from tests import patch
+from tests.utils import FakeLoginManager, PatchedHttp
 
 
 class TestAPIMWException(DefaultSiteTestCase):
@@ -76,10 +69,31 @@ class TestAPIMWException(DefaultSiteTestCase):
             for param, value in self.assert_parameters.items():
                 self.assertIn(param, parameters)
                 if value is not None:
-                    if isinstance(value, UnicodeType):
+                    if isinstance(value, str):
                         value = value.split('|')
                     self.assertLessEqual(set(value), parameters[param])
         return self.data
+
+    def setUp(self):
+        """Mock warning and error."""
+        super(TestAPIMWException, self).setUp()
+        self.warning_patcher = patch.object(pywikibot, 'warning')
+        self.error_patcher = patch.object(pywikibot, 'error')
+        self.warning_patcher.start()
+        self.error_patcher.start()
+
+    def tearDown(self):
+        """Check warning and error calls."""
+        try:
+            pywikibot.warning.assert_called_with(
+                'API error internal_api_error_fake: Fake error message')
+            pywikibot.error.assert_called_with(
+                'Detected MediaWiki API exception internal_api_error_fake: '
+                'Fake error message\n[servedby: unittest]; raising')
+        finally:
+            self.warning_patcher.stop()
+            self.error_patcher.stop()
+            super(TestAPIMWException, self).tearDown()
 
     def test_API_error(self):
         """Test a static request."""
@@ -113,6 +127,7 @@ class TestApiFunctions(DefaultSiteTestCase):
 
     """API Request object test class."""
 
+    @suppress_warnings(r'Request\(\) invoked without a site', RuntimeWarning)
     def testObjectCreation(self):
         """Test api.Request() constructor with implicit site creation."""
         req = api.Request(parameters={'action': 'test', 'foo': '',
@@ -132,17 +147,17 @@ class TestDryApiFunctions(DefaultDrySiteTestCase):
                                                    'bar': 'test'})
         self.assertTrue(req)
         self.assertEqual(req.site, mysite)
-        self.assertIn("foo", req._params)
-        self.assertEqual(req["bar"], ["test"])
+        self.assertIn('foo', req._params)
+        self.assertEqual(req['bar'], ['test'])
         # test item assignment
-        req["one"] = "1"
-        self.assertEqual(req._params['one'], ["1"])
+        req['one'] = '1'
+        self.assertEqual(req._params['one'], ['1'])
         # test compliance with dict interface
-        # req.keys() should contain "action", "foo", "bar", "one"
-        self.assertEqual(len(req.keys()), 4)
-        self.assertIn("test", req._encoded_items().values())
+        # req.keys() should contain 'action', 'foo', 'bar', 'one'
+        self.assertLength(req.keys(), 4)
+        self.assertIn('test', req._encoded_items().values())
         for item in req.items():
-            self.assertEqual(len(item), 2, item)
+            self.assertLength(item, 2)
 
     @suppress_warnings(
         'Instead of using kwargs |Both kwargs and parameters are set',
@@ -166,14 +181,12 @@ class TestParamInfo(DefaultSiteTestCase):
         """Test common initialization."""
         site = self.get_site()
         pi = api.ParamInfo(site)
-        self.assertEqual(len(pi), 0)
+        self.assertIsEmpty(pi)
         pi._init()
 
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
-        if MediaWikiVersion(self.site.version()) >= MediaWikiVersion("1.12"):
-            self.assertEqual(len(pi),
-                             len(pi.preloaded_modules))
+        self.assertLength(pi, pi.preloaded_modules)
 
         self.assertIn('info', pi.query_modules)
         self.assertIn('login', pi._action_modules)
@@ -190,8 +203,8 @@ class TestParamInfo(DefaultSiteTestCase):
             else:
                 assert 'query' not in modules
             original_generate_submodules(modules)
-        pi = api.ParamInfo(self.site, set(['query', 'main']))
-        self.assertEqual(len(pi), 0)
+        pi = api.ParamInfo(self.site, {'query', 'main'})
+        self.assertIsEmpty(pi)
         original_generate_submodules = pi._generate_submodules
         pi._generate_submodules = patched_generate_submodules
         pi._init()
@@ -202,29 +215,25 @@ class TestParamInfo(DefaultSiteTestCase):
         """Test initializing with only the pageset."""
         site = self.get_site()
         self.assertNotIn('query', api.ParamInfo.init_modules)
-        pi = api.ParamInfo(site, set(['pageset']))
+        pi = api.ParamInfo(site, {'pageset'})
         self.assertNotIn('query', api.ParamInfo.init_modules)
-        self.assertEqual(len(pi), 0)
+        self.assertIsEmpty(pi)
         pi._init()
 
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
         self.assertIn('pageset', pi._paraminfo)
 
-        if MediaWikiVersion(self.site.version()) < MediaWikiVersion("1.12"):
-            return
-
         if 'query' in pi.preloaded_modules:
             self.assertIn('query', pi._paraminfo)
-            self.assertEqual(len(pi), 4)
+            self.assertLength(pi, 4)
         else:
             self.assertNotIn('query', pi._paraminfo)
-            self.assertEqual(len(pi), 3)
+            self.assertLength(pi, 3)
 
-        self.assertEqual(len(pi),
-                         len(pi.preloaded_modules))
+        self.assertLength(pi, pi.preloaded_modules)
 
-        if MediaWikiVersion(site.version()) >= MediaWikiVersion("1.21"):
+        if site.mw_version >= '1.21':
             # 'generator' was added to 'pageset' in 1.21
             generators_param = pi.parameter('pageset', 'generator')
             self.assertGreater(len(generators_param['type']), 1)
@@ -232,8 +241,8 @@ class TestParamInfo(DefaultSiteTestCase):
     def test_generators(self):
         """Test requesting the generator parameter."""
         site = self.get_site()
-        pi = api.ParamInfo(site, set(['pageset', 'query']))
-        self.assertEqual(len(pi), 0)
+        pi = api.ParamInfo(site, {'pageset', 'query'})
+        self.assertIsEmpty(pi)
         pi._init()
 
         self.assertIn('main', pi._paraminfo)
@@ -241,7 +250,7 @@ class TestParamInfo(DefaultSiteTestCase):
         self.assertIn('pageset', pi._paraminfo)
         self.assertIn('query', pi._paraminfo)
 
-        if MediaWikiVersion(site.version()) >= MediaWikiVersion("1.21"):
+        if site.mw_version >= '1.21':
             # 'generator' was added to 'pageset' in 1.21
             pageset_generators_param = pi.parameter('pageset', 'generator')
             query_generators_param = pi.parameter('query', 'generator')
@@ -252,15 +261,13 @@ class TestParamInfo(DefaultSiteTestCase):
         """Test requesting the module info."""
         site = self.get_site()
         pi = api.ParamInfo(site)
-        self.assertEqual(len(pi), 0)
+        self.assertIsEmpty(pi)
         pi.fetch(['info'])
         self.assertIn('query+info', pi._paraminfo)
 
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
-        if MediaWikiVersion(self.site.version()) >= MediaWikiVersion("1.12"):
-            self.assertEqual(len(pi),
-                             1 + len(pi.preloaded_modules))
+        self.assertLength(pi, 1 + len(pi.preloaded_modules))
 
         self.assertEqual(pi['info']['prefix'], 'in')
 
@@ -272,24 +279,19 @@ class TestParamInfo(DefaultSiteTestCase):
 
         self.assertIsInstance(param['type'], list)
 
-        if MediaWikiVersion(self.site.version()) < MediaWikiVersion("1.12"):
-            return
-
         self.assertIn('protection', param['type'])
 
     def test_with_module_revisions(self):
         """Test requesting the module revisions."""
         site = self.get_site()
         pi = api.ParamInfo(site)
-        self.assertEqual(len(pi), 0)
+        self.assertIsEmpty(pi)
         pi.fetch(['revisions'])
         self.assertIn('query+revisions', pi._paraminfo)
 
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
-        if MediaWikiVersion(self.site.version()) >= MediaWikiVersion("1.12"):
-            self.assertEqual(len(pi),
-                             1 + len(pi.preloaded_modules))
+        self.assertLength(pi, 1 + len(pi.preloaded_modules))
 
         self.assertEqual(pi['revisions']['prefix'], 'rv')
 
@@ -301,16 +303,13 @@ class TestParamInfo(DefaultSiteTestCase):
 
         self.assertIsInstance(param['type'], list)
 
-        if MediaWikiVersion(self.site.version()) < MediaWikiVersion("1.12"):
-            return
-
         self.assertIn('user', param['type'])
 
     def test_multiple_modules(self):
         """Test requesting multiple modules in one fetch."""
         site = self.get_site()
         pi = api.ParamInfo(site)
-        self.assertEqual(len(pi), 0)
+        self.assertIsEmpty(pi)
         pi.fetch(['info', 'revisions'])
         self.assertIn('query+info', pi._paraminfo)
         self.assertIn('query+revisions', pi._paraminfo)
@@ -318,31 +317,26 @@ class TestParamInfo(DefaultSiteTestCase):
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
 
-        if MediaWikiVersion(self.site.version()) < MediaWikiVersion("1.12"):
-            return
-
-        self.assertEqual(len(pi),
-                         2 + len(pi.preloaded_modules))
+        self.assertLength(pi, 2 + len(pi.preloaded_modules))
 
     def test_with_invalid_module(self):
         """Test requesting different kind of invalid modules."""
         site = self.get_site()
         pi = api.ParamInfo(site)
-        self.assertEqual(len(pi), 0)
-        pi.fetch('foobar')
+        self.assertIsEmpty(pi)
+
+        with patch.object(pywikibot, 'warning') as w:
+            pi.fetch('foobar')
+            self.assertRaises(KeyError, pi.__getitem__, 'foobar')
+            self.assertRaises(KeyError, pi.__getitem__, 'foobar+foobar')
+        # The warning message may be different with older MW versions.
+        self.assertIn('API warning (paraminfo): ', w.call_args[0][0])
+
         self.assertNotIn('foobar', pi._paraminfo)
-
-        self.assertRaises(KeyError, pi.__getitem__, 'foobar')
-        self.assertRaises(KeyError, pi.__getitem__, 'foobar+foobar')
-
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
 
-        if MediaWikiVersion(self.site.version()) < MediaWikiVersion("1.12"):
-            return
-
-        self.assertEqual(len(pi),
-                         len(pi.preloaded_modules))
+        self.assertLength(pi, pi.preloaded_modules)
 
     def test_submodules(self):
         """Test another module apart from query having submodules."""
@@ -358,9 +352,15 @@ class TestParamInfo(DefaultSiteTestCase):
             self.assertEqual(mod[6:], pi[mod]['name'])
             self.assertEqual(mod, pi[mod]['path'])
 
-        self.assertRaises(KeyError, pi.__getitem__, 'query+foobar')
+        with patch.object(pywikibot, 'warning') as w:
+            self.assertRaises(KeyError, pi.__getitem__, 'query+foobar')
+        # The warning message may be different with older MW versions.
+        self.assertIn('API warning (paraminfo): ', w.call_args[0][0])
+
         self.assertRaises(KeyError, pi.submodules, 'edit')
 
+    @suppress_warnings(
+        'pywikibot.data.api.ParamInfo.query_modules_with_limits is deprecated')
     def test_query_modules_with_limits(self):
         """Test query_modules_with_limits property."""
         site = self.get_site()
@@ -372,11 +372,16 @@ class TestParamInfo(DefaultSiteTestCase):
         """Test v1.8 modules exist."""
         site = self.get_site()
         pi = api.ParamInfo(site)
-        self.assertIn('revisions', pi.modules)
-        self.assertIn('help', pi.modules)
-        self.assertIn('allpages', pi.modules)
-        for mod in pi.modules:
-            self.assertNotIn('+', mod)
+        with suppress_warnings(
+            r'pywikibot\.data\.api\.ParamInfo.modules is deprecated for '
+            r'[\w ]+; use submodules\(\) or module_paths instead\.',
+            DeprecationWarning
+        ):
+            self.assertIn('revisions', pi.modules)
+            self.assertIn('help', pi.modules)
+            self.assertIn('allpages', pi.modules)
+            for mod in pi.modules:
+                self.assertNotIn('+', mod)
 
     def test_module_paths(self):
         """Test module paths use the complete paths."""
@@ -391,9 +396,15 @@ class TestParamInfo(DefaultSiteTestCase):
         """Test v1.8 module prefixes exist."""
         site = self.get_site()
         pi = api.ParamInfo(site)
-        self.assertIn('revisions', pi.prefixes)
-        self.assertIn('login', pi.prefixes)
-        self.assertIn('allpages', pi.prefixes)
+        with suppress_warnings(
+            r'pywikibot.data.api.ParamInfo.'
+            r'(?:prefixes|module_attribute_map|modules) '
+            r'is deprecated for [\w ]+; ',
+            DeprecationWarning
+        ):
+            self.assertIn('revisions', pi.prefixes)
+            self.assertIn('login', pi.prefixes)
+            self.assertIn('allpages', pi.prefixes)
 
     def test_prefix_map(self):
         """Test module prefixes use the path."""
@@ -413,7 +424,8 @@ class TestParamInfo(DefaultSiteTestCase):
             self.assertEqual(mod, pi[mod]['path'])
             self.assertEqual(value, '')
 
-    def test_old_mode(self):
+    @patch.object(pywikibot, 'warning')  # ignore several warnings
+    def test_old_mode(self, *args):
         """Test the old mode explicitly."""
         site = self.get_site()
         pi = api.ParamInfo(site, modules_only_mode=False)
@@ -423,30 +435,25 @@ class TestParamInfo(DefaultSiteTestCase):
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
 
-        if MediaWikiVersion(self.site.version()) >= MediaWikiVersion("1.12"):
-            self.assertEqual(len(pi),
-                             1 + len(pi.preloaded_modules))
+        self.assertLength(pi, 1 + len(pi.preloaded_modules))
 
-        self.assertIn('revisions', pi.prefixes)
+        self.assertIn('query+revisions', pi.prefix_map)
 
     def test_new_mode(self):
         """Test the new modules-only mode explicitly."""
         site = self.get_site()
-        if MediaWikiVersion(site.version()) < MediaWikiVersion('1.25wmf4'):
-            raise unittest.SkipTest(
-                "version %s doesn't support the new paraminfo api"
-                % site.version())
+        if site.mw_version < '1.25wmf4':
+            self.skipTest(
+                "version {} doesn't support the new paraminfo api"
+                .format(site.mw_version))
         pi = api.ParamInfo(site, modules_only_mode=True)
         pi.fetch(['info'])
         self.assertIn('query+info', pi._paraminfo)
-
         self.assertIn('main', pi._paraminfo)
         self.assertIn('paraminfo', pi._paraminfo)
 
-        self.assertEqual(len(pi),
-                         1 + len(pi.preloaded_modules))
-
-        self.assertIn('revisions', pi.prefixes)
+        self.assertLength(pi, 1 + len(pi.preloaded_modules))
+        self.assertIn('query+revisions', pi.prefix_map)
 
 
 class TestOtherSubmodule(TestCase):
@@ -473,14 +480,16 @@ class TestOtherSubmodule(TestCase):
         other_modules -= pi.query_modules
         self.assertLessEqual(other_modules & pi.submodules('flow'),
                              pi.submodules('flow'))
-        self.assertFalse(other_modules & pi.modules)
+        with suppress_warnings(
+            r'pywikibot.data.api.ParamInfo.modules is deprecated; '
+            r'use submodules\(\) or module_paths instead.'
+        ):
+            self.assertFalse(other_modules & pi.modules)
 
 
 class TestParaminfoModules(DefaultSiteTestCase):
 
     """Test loading all paraminfo modules."""
-
-    vcr = True
 
     def test_action_modules(self):
         """Test loading all action modules."""
@@ -502,23 +511,24 @@ class TestOptionSet(TestCase):
         """Test OptionSet with initialised site."""
         options = api.OptionSet(self.get_site(), 'recentchanges', 'show')
         self.assertRaises(KeyError, options.__setitem__, 'invalid_name', True)
-        self.assertRaises(ValueError, options.__setitem__, 'anon', 'invalid_value')
+        self.assertRaises(ValueError, options.__setitem__,
+                          'anon', 'invalid_value')
         options['anon'] = True
         self.assertCountEqual(['anon'], options._enabled)
         self.assertEqual(set(), options._disabled)
-        self.assertEqual(1, len(options))
+        self.assertLength(options, 1)
         self.assertEqual(['anon'], list(options))
         self.assertEqual(['anon'], list(options.api_iter()))
         options['bot'] = False
         self.assertCountEqual(['anon'], options._enabled)
         self.assertCountEqual(['bot'], options._disabled)
-        self.assertEqual(2, len(options))
+        self.assertLength(options, 2)
         self.assertEqual(['anon', 'bot'], list(options))
         self.assertEqual(['anon', '!bot'], list(options.api_iter()))
         options.clear()
         self.assertEqual(set(), options._enabled)
         self.assertEqual(set(), options._disabled)
-        self.assertEqual(0, len(options))
+        self.assertIsEmpty(options)
         self.assertEqual([], list(options))
         self.assertEqual([], list(options.api_iter()))
 
@@ -528,12 +538,12 @@ class TestOptionSet(TestCase):
         options['invalid_name'] = True
         options['anon'] = True
         self.assertIn('invalid_name', options._enabled)
-        self.assertEqual(2, len(options))
+        self.assertLength(options, 2)
         self.assertRaises(KeyError, options._set_site, self.get_site(),
                           'recentchanges', 'show')
-        self.assertEqual(2, len(options))
+        self.assertLength(options, 2)
         options._set_site(self.get_site(), 'recentchanges', 'show', True)
-        self.assertEqual(1, len(options))
+        self.assertLength(options, 1)
         self.assertRaises(TypeError, options._set_site, self.get_site(),
                           'recentchanges', 'show')
 
@@ -550,8 +560,9 @@ class TestDryOptionSet(DefaultDrySiteTestCase):
         options['c'] = None
         self.assertCountEqual(['a', 'b'], list(options.keys()))
         self.assertCountEqual([True, False], list(options.values()))
-        self.assertEqual(set(), set(options.values()) - set([True, False]))
-        self.assertCountEqual([('a', True), ('b', False)], list(options.items()))
+        self.assertEqual(set(), set(options.values()) - {True, False})
+        self.assertCountEqual([('a', True), ('b', False)],
+                              list(options.items()))
 
 
 class TestDryPageGenerator(TestCase):
@@ -565,35 +576,36 @@ class TestDryPageGenerator(TestCase):
 
     # api.py sorts 'pages' using the string key, which is not a
     # numeric comparison.
-    titles = ("Broadcaster (definition)", "Wiktionary", "Broadcaster.com",
-              "Wikipedia:Disambiguation")
+    titles = ('Broadcaster (definition)', 'Wiktionary', 'Broadcaster.com',
+              'Wikipedia:Disambiguation')
 
     def setUp(self):
         """Set up test case."""
         super(TestDryPageGenerator, self).setUp()
         mysite = self.get_site()
         self.gen = api.PageGenerator(site=mysite,
-                                     generator="links",
+                                     generator='links',
                                      parameters={'titles': "User:R'n'B"})
         # following test data is copied from an actual api.php response,
         # but that query no longer matches this dataset.
         # http://en.wikipedia.org/w/api.php?action=query&generator=links&titles=User:R%27n%27B
         self.gen.request.submit = types.MethodType(lambda self: {
-            "query": {"pages": {"296589": {"pageid": 296589,
-                                           "ns": 0,
-                                           "title": "Broadcaster.com"
+            'query': {'pages': {'296589': {'pageid': 296589,
+                                           'ns': 0,
+                                           'title': 'Broadcaster.com'
                                            },
-                                "13918157": {"pageid": 13918157,
-                                             "ns": 0,
-                                             "title": "Broadcaster (definition)"
+                                '13918157': {'pageid': 13918157,
+                                             'ns': 0,
+                                             'title': 'Broadcaster '
+                                                      '(definition)'
                                              },
-                                "156658": {"pageid": 156658,
-                                           "ns": 0,
-                                           "title": "Wiktionary"
+                                '156658': {'pageid': 156658,
+                                           'ns': 0,
+                                           'title': 'Wiktionary'
                                            },
-                                "47757": {"pageid": 47757,
-                                          "ns": 4,
-                                          "title": "Wikipedia:Disambiguation"
+                                '47757': {'pageid': 47757,
+                                          'ns': 4,
+                                          'title': 'Wikipedia:Disambiguation'
                                           }
                                 }
                       }
@@ -603,15 +615,16 @@ class TestDryPageGenerator(TestCase):
         # Add custom_name for this site namespace, to match the live site.
         if 'Wikipedia' not in self.site.namespaces:
             self.site.namespaces[4].custom_name = 'Wikipedia'
-            self.site.namespaces._namespace_names['wikipedia'] = self.site.namespaces[4]
+            self.site.namespaces._namespace_names['wikipedia'] = (
+                self.site.namespaces[4])
 
     def test_results(self):
         """Test that PageGenerator yields pages with expected attributes."""
-        self.assertPagelistTitles(self.gen, self.titles)
+        self.assertPageTitlesEqual(self.gen, self.titles)
 
     def test_initial_limit(self):
         """Test the default limit."""
-        self.assertEqual(self.gen.limit, None)  # limit is initally None
+        self.assertIsNone(self.gen.limit)  # limit is initially None
 
     def test_set_limit_as_number(self):
         """Test setting the limit using an int."""
@@ -632,25 +645,22 @@ class TestDryPageGenerator(TestCase):
                 r"invalid literal for int\(\) with base 10: 'test'"):
             self.gen.set_maximum_items('test')
 
-    def test_limit_equal_total(self):
+    def test_limit_range(self):
         """Test that PageGenerator yields the requested amount of pages."""
-        self.gen.set_maximum_items(4)
-        self.assertPagelistTitles(self.gen, self.titles)
-
-    def test_limit_one(self):
-        """Test that PageGenerator yields the requested amount of pages."""
-        self.gen.set_maximum_items(1)
-        self.assertPagelistTitles(self.gen, self.titles[0:1])
+        for i in range(1, 6):
+            with self.subTest(amount=i):
+                self.gen.set_maximum_items(i)
+                self.assertPageTitlesEqual(self.gen, self.titles[:i])
 
     def test_limit_zero(self):
         """Test that a limit of zero is the same as limit None."""
         self.gen.set_maximum_items(0)
-        self.assertPagelistTitles(self.gen, self.titles)
+        self.assertPageTitlesEqual(self.gen, self.titles)
 
     def test_limit_omit(self):
         """Test that limit omitted is the same as limit None."""
         self.gen.set_maximum_items(-1)
-        self.assertPagelistTitles(self.gen, self.titles)
+        self.assertPageTitlesEqual(self.gen, self.titles)
 
     def test_namespace(self):
         """Test PageGenerator set_namespace."""
@@ -670,11 +680,10 @@ class TestPropertyGenerator(TestCase):
         """Test PropertyGenerator with prop 'info'."""
         mainpage = self.get_mainpage()
         links = list(self.site.pagelinks(mainpage, total=10))
-        titles = [l.title(withSection=False)
-                  for l in links]
+        titles = [link.title(with_section=False) for link in links]
         gen = api.PropertyGenerator(site=self.site,
-                                    prop="info",
-                                    titles='|'.join(titles))
+                                    prop='info',
+                                    parameters={'titles': '|'.join(titles)})
 
         count = 0
         for pagedata in gen:
@@ -682,17 +691,16 @@ class TestPropertyGenerator(TestCase):
             self.assertIn('pageid', pagedata)
             self.assertIn('lastrevid', pagedata)
             count += 1
-        self.assertEqual(len(links), count)
+        self.assertLength(links, count)
 
     def test_one_continuation(self):
         """Test PropertyGenerator with prop 'revisions'."""
         mainpage = self.get_mainpage()
         links = list(self.site.pagelinks(mainpage, total=10))
-        titles = [l.title(withSection=False)
-                  for l in links]
+        titles = [link.title(with_section=False) for link in links]
         gen = api.PropertyGenerator(site=self.site,
-                                    prop="revisions",
-                                    titles='|'.join(titles))
+                                    prop='revisions',
+                                    parameters={'titles': '|'.join(titles)})
         gen.set_maximum_items(-1)  # suppress use of "rvlimit" parameter
 
         count = 0
@@ -702,17 +710,16 @@ class TestPropertyGenerator(TestCase):
             self.assertIn('revisions', pagedata)
             self.assertIn('revid', pagedata['revisions'][0])
             count += 1
-        self.assertEqual(len(links), count)
+        self.assertLength(links, count)
 
     def test_two_continuations(self):
         """Test PropertyGenerator with prop 'revisions' and 'coordinates'."""
         mainpage = self.get_mainpage()
         links = list(self.site.pagelinks(mainpage, total=10))
-        titles = [l.title(withSection=False)
-                  for l in links]
+        titles = [link.title(with_section=False) for link in links]
         gen = api.PropertyGenerator(site=self.site,
-                                    prop="revisions|coordinates",
-                                    titles='|'.join(titles))
+                                    prop='revisions|coordinates',
+                                    parameters={'titles': '|'.join(titles)})
         gen.set_maximum_items(-1)  # suppress use of "rvlimit" parameter
 
         count = 0
@@ -722,19 +729,22 @@ class TestPropertyGenerator(TestCase):
             self.assertIn('revisions', pagedata)
             self.assertIn('revid', pagedata['revisions'][0])
             count += 1
-        self.assertEqual(len(links), count)
+        self.assertLength(links, count)
 
-    @allowed_failure
     def test_many_continuations_limited(self):
         """Test PropertyGenerator with many limited props."""
         mainpage = self.get_mainpage()
         links = list(self.site.pagelinks(mainpage, total=30))
-        titles = [l.title(withSection=False)
-                  for l in links]
-        gen = api.PropertyGenerator(site=self.site,
-                                    prop="revisions|info|categoryinfo|langlinks|templates",
-                                    rvprop="ids|flags|timestamp|user|comment|content",
-                                    titles='|'.join(titles))
+        titles = [link.title(with_section=False) for link in links]
+        params = {
+            'rvprop': 'ids|flags|timestamp|user|comment|content',
+            'titles': '|'.join(titles)}
+        if self.site.mw_version >= '1.32':
+            params['rvslots'] = 'main'
+        gen = api.PropertyGenerator(
+            site=self.site,
+            prop='revisions|info|categoryinfo|langlinks|templates',
+            parameters=params)
 
         # An APIError is raised if set_maximum_items is not called.
         gen.set_maximum_items(-1)  # suppress use of "rvlimit" parameter
@@ -746,20 +756,16 @@ class TestPropertyGenerator(TestCase):
             self.assertIsInstance(pagedata, dict)
             self.assertIn('pageid', pagedata)
             count += 1
-        self.assertEqual(len(links), count)
-        # FIXME: AssertionError: 30 != 6150
+        self.assertLength(links, count)
 
-    @allowed_failure
     def test_two_continuations_limited(self):
         """Test PropertyGenerator with many limited props and continuations."""
-        # FIXME: test fails
         mainpage = self.get_mainpage()
         links = list(self.site.pagelinks(mainpage, total=30))
-        titles = [l.title(withSection=False)
-                  for l in links]
-        gen = api.PropertyGenerator(site=self.site,
-                                    prop="info|categoryinfo|langlinks|templates",
-                                    titles='|'.join(titles))
+        titles = [link.title(with_section=False) for link in links]
+        gen = api.PropertyGenerator(
+            site=self.site, prop='info|categoryinfo|langlinks|templates',
+            parameters={'titles': '|'.join(titles)})
         # Force the generator into continuation mode
         gen.set_query_increment(5)
 
@@ -768,28 +774,85 @@ class TestPropertyGenerator(TestCase):
             self.assertIsInstance(pagedata, dict)
             self.assertIn('pageid', pagedata)
             count += 1
-        self.assertEqual(len(links), count)
-        # FIXME: AssertionError: 30 != 11550
+        self.assertLength(links, count)
 
-    # FIXME: test disabled as it takes longer than 10 minutes
-    def _test_two_continuations_limited_long_test(self):
-        """Long duration test, with total & step that are a real scenario."""
-        mainpage = self.get_mainpage()
-        links = list(mainpage.backlinks(total=300))
-        titles = [l.title(withSection=False)
-                  for l in links]
-        gen = api.PropertyGenerator(site=self.site,
-                                    prop="info|categoryinfo|langlinks|templates",
-                                    titles='|'.join(titles))
-        # Force the generator into continuation mode
-        gen.set_query_increment(50)
 
-        count = 0
-        for pagedata in gen:
-            self.assertIsInstance(pagedata, dict)
-            self.assertIn('pageid', pagedata)
-            count += 1
-        self.assertEqual(len(links), count)
+class TestDryQueryGeneratorNamespaceParam(TestCase):
+
+    """Test setting of namespace param with ListGenerator.
+
+    Generators with different characteristics are used.
+    site._paraminfo is not always faithful to API, but serves the purpose
+    here.
+    """
+
+    family = 'wikipedia'
+    code = 'en'
+
+    dry = True
+
+    def setUp(self):
+        """Set up test case."""
+        super(TestDryQueryGeneratorNamespaceParam, self).setUp()
+        self.site = self.get_site()
+        self.site._paraminfo['query+querypage'] = {
+            'prefix': 'qp',
+            'limit': {'max': 10},
+        }
+        self.site._paraminfo['query+allpages'] = {
+            'prefix': 'ap',
+            'limit': {'max': 10},
+            'namespace': {'multi': True}
+        }
+        self.site._paraminfo['query+alllinks'] = {
+            'prefix': 'al',
+            'limit': {'max': 10},
+            'namespace': {'default': 0}
+        }
+        self.site._paraminfo['query+links'] = {
+            'prefix': 'pl',
+        }
+        self.site._paraminfo.query_modules_with_limits = {'querypage',
+                                                          'allpages',
+                                                          'alllinks'}
+
+    def test_namespace_for_module_with_no_limit(self):
+        """Test PageGenerator set_namespace."""
+        self.gen = api.PageGenerator(site=self.site,
+                                     generator='links',
+                                     parameters={'titles': 'test'})
+        self.assertRaises(AssertionError, self.gen.set_namespace, 0)
+        self.assertRaises(AssertionError, self.gen.set_namespace, 1)
+        self.assertRaises(AssertionError, self.gen.set_namespace, None)
+
+    def test_namespace_param_is_not_settable(self):
+        """Test ListGenerator support_namespace."""
+        self.gen = api.ListGenerator(listaction='querypage', site=self.site)
+        self.assertFalse(self.gen.support_namespace())
+        self.assertFalse(self.gen.set_namespace([0, 1]))
+
+    def test_namespace_none(self):
+        """Test ListGenerator set_namespace with None."""
+        self.gen = api.ListGenerator(listaction='alllinks', site=self.site)
+        self.assertRaises(TypeError, self.gen.set_namespace, None)
+
+    def test_namespace_non_multi(self):
+        """Test ListGenerator set_namespace when non multi."""
+        self.gen = api.ListGenerator(listaction='alllinks', site=self.site)
+        self.assertRaises(TypeError, self.gen.set_namespace, [0, 1])
+        self.assertIsNone(self.gen.set_namespace(0))
+
+    def test_namespace_multi(self):
+        """Test ListGenerator set_namespace when multi."""
+        self.gen = api.ListGenerator(listaction='allpages', site=self.site)
+        self.assertTrue(self.gen.support_namespace())
+        self.assertIsNone(self.gen.set_namespace([0, 1]))
+
+    def test_namespace_resolve_failed(self):
+        """Test ListGenerator set_namespace when resolve fails."""
+        self.gen = api.ListGenerator(listaction='allpages', site=self.site)
+        self.assertTrue(self.gen.support_namespace())
+        self.assertRaises(KeyError, self.gen.set_namespace, 10000)
 
 
 class TestDryListGenerator(TestCase):
@@ -810,8 +873,8 @@ class TestDryListGenerator(TestCase):
             'limit': {'max': 10},
             'namespace': {'multi': True}
         }
-        mysite._paraminfo.query_modules_with_limits = set(['allpages'])
-        self.gen = api.ListGenerator(listaction="allpages", site=mysite)
+        mysite._paraminfo.query_modules_with_limits = {'allpages'}
+        self.gen = api.ListGenerator(listaction='allpages', site=mysite)
 
     def test_namespace_none(self):
         """Test ListGenerator set_namespace with None."""
@@ -819,7 +882,7 @@ class TestDryListGenerator(TestCase):
 
     def test_namespace_zero(self):
         """Test ListGenerator set_namespace with 0."""
-        self.gen.set_namespace(0)
+        self.assertIsNone(self.gen.set_namespace(0))
 
 
 class TestCachedRequest(DefaultSiteTestCase):
@@ -827,11 +890,9 @@ class TestCachedRequest(DefaultSiteTestCase):
     """Test API Request caching.
 
     This test class does not use the forced test caching.
-    This class contains test cases with requests which are mocked with VCR.
     """
 
     cached = False
-    vcr = True
 
     def test_normal_use(self):
         """Test the caching of CachedRequest with an ordinary request."""
@@ -859,24 +920,12 @@ class TestCachedRequest(DefaultSiteTestCase):
         self.assertIsNotNone(req3._cachetime)
         self.assertEqual(req2._cachetime, req3._cachetime)
 
-
-class TestCachedRequestNonVCR(DefaultSiteTestCase):
-
-    """Test API Request caching (live without VCR).
-
-    This test class does not use the forced test caching.
-    This class contains test cases with requests which can't be mocked
-    with VCR.
-    """
-
-    cached = False
-
     def test_internals(self):
         """Test the caching of CachedRequest by faking a unique request."""
         mysite = self.get_site()
         # Run tests on a missing page unique to this test run so it can
         # not be cached the first request, but will be cached after.
-        now = datetime.datetime.now()
+        now = datetime.datetime.utcnow()
         params = {'action': 'query',
                   'prop': 'info',
                   'titles': 'TestCachedRequest_test_internals ' + str(now),
@@ -945,34 +994,58 @@ class TestLazyLoginNotExistUsername(TestLazyLoginBase):
         pywikibot.data.api.LoginManager = self.orig_login_manager
         super(TestLazyLoginNotExistUsername, self).tearDown()
 
-    def test_access_denied_notexist_username(self):
+    # When there is no API access the deprecated family.version is used.
+    @suppress_warnings('pywikibot.family.Family.version is deprecated')
+    @patch.object(pywikibot, 'output')
+    @patch.object(pywikibot, 'exception')
+    @patch.object(pywikibot, 'warning')
+    @patch.object(pywikibot, 'error')
+    def test_access_denied_notexist_username(
+        self, error, warning, exception, output
+    ):
         """Test the query with a username which does not exist."""
-        self.site._username = ['Not registered username', None]
+        self.site._username = 'Not registered username'
         req = api.Request(site=self.site, parameters={'action': 'query'})
         self.assertRaises(pywikibot.NoUsername, req.submit)
         # FIXME: T100965
         self.assertRaises(api.APIError, req.submit)
+        try:
+            error.assert_called_with('Login failed (readapidenied).')
+        except AssertionError:  # MW version is older than 1.34.0-wmf.13
+            try:
+                error.assert_called_with('Login failed (FAIL).')
+            except AssertionError:  # MW version is older than 1.27
+                error.assert_called_with('Login failed (Failed).')
+        warning.assert_called_with(
+            'API error readapidenied: '
+            'You need read permission to use this module.')
+        exception.assert_called_with(
+            'You have no API read permissions. Seems you are not logged in')
+        self.assertIn(
+            'Logging in to steward:steward as ', output.call_args[0][0])
 
 
 class TestLazyLoginNoUsername(TestLazyLoginBase):
 
     """Test no username."""
 
-    def test_access_denied_no_username(self):
+    # When there is no API access the deprecated family.version is used.
+    @suppress_warnings('pywikibot.family.Family.version is deprecated')
+    @patch.object(pywikibot, 'warning')
+    @patch.object(pywikibot, 'exception')
+    @patch.object(pywikibot.config, 'usernames', defaultdict(dict))
+    def test_access_denied_no_username(self, exception, warning):
         """Test the query without a username."""
-        self.site._username = [None, None]
-
-        # FIXME: The following prevents LoginManager
-        # from loading the username from the config when the site
-        # username is None. i.e. site.login(user=None) means load
-        # username from the configuration.
-        if 'steward' in pywikibot.config.usernames:
-            del pywikibot.config.usernames['steward']
-
+        self.site._username = None
         req = api.Request(site=self.site, parameters={'action': 'query'})
         self.assertRaises(pywikibot.NoUsername, req.submit)
         # FIXME: T100965
         self.assertRaises(api.APIError, req.submit)
+        warning.assert_called_with(
+            'API error readapidenied: '
+            'You need read permission to use this module.')
+        exception.assert_called_with(
+            'You have no API read permissions. Seems you are not logged in')
 
 
 class TestBadTokenRecovery(TestCase):
@@ -989,7 +1062,7 @@ class TestBadTokenRecovery(TestCase):
         site = self.get_site()
         site.tokens._tokens.setdefault(site.user(), {})['edit'] = 'INVALID'
         page = pywikibot.Page(site, 'Pywikibot bad token test')
-        page.text = ('This page is testing whether pywikibot-core rerequests '
+        page.text = ('This page is testing whether pywikibot rerequests '
                      'a token when a badtoken error was received.')
         page.save(summary='Bad token test')
 
@@ -1028,11 +1101,8 @@ class TestUrlEncoding(TestCase):
 
     def test_url_encoding_from_basestring(self):
         """Test encoding basestring values."""
-        if PY2:
-            query = {'token': str('test\xe2\x80\x94test'.encode('utf-8'))}
-        else:
-            query = {'token': 'test\xe2\x80\x94test'}
-        expect = str('token=test%C3%A2%C2%80%C2%94test')
+        query = {'token': 'test\xe2\x80\x94test'}
+        expect = 'token=test%C3%A2%C2%80%C2%94test'
         result = api.encode_url(query)
         self.assertEqual(result, expect)
         self.assertIsInstance(result, str)
@@ -1065,8 +1135,9 @@ class TestLagpattern(DefaultSiteTestCase):
     def test_valid_lagpattern(self):
         """Test whether api.lagpattern is valid."""
         mysite = self.get_site()
-        if mysite.siteinfo['dbrepllag'][0]['lag'] == -1:
-            raise unittest.SkipTest(
+        if ('dbrepllag' not in mysite.siteinfo
+                or mysite.siteinfo['dbrepllag'][0]['lag'] == -1):
+            self.skipTest(
                 '{0} is not running on a replicated database cluster.'
                 .format(mysite)
             )
@@ -1084,25 +1155,25 @@ class TestLagpattern(DefaultSiteTestCase):
             pywikibot.warning(
                 'Wrong api.lagpattern regex, cannot retrieve lag value')
             raise e
-        value = mysite.throttle._lagvalue
-        self.assertIsInstance(value, int)
-        self.assertGreaterEqual(value, 0)
+        self.assertIsInstance(mythrottle._lagvalue, int)
+        self.assertGreaterEqual(mythrottle._lagvalue, 0)
+        self.assertIsInstance(mythrottle.retry_after, int)
+        self.assertGreaterEqual(mythrottle.retry_after, 0)
 
     def test_individual_patterns(self):
         """Test api.lagpattern with example patterns."""
         patterns = {
-            'Waiting for 10.64.32.115: 0.14024019241333 seconds lagged': 0,
+            'Waiting for 10.64.32.115: 0.14024019241333 seconds lagged':
+                0.14024019241333,
             'Waiting for hostname: 5 seconds lagged': 5,
-            'Waiting for 127.0.0.1: 1.7 seconds lagged': 1
+            'Waiting for 127.0.0.1: 1.7 seconds lagged': 1.7
         }
         for info, time in patterns.items():
             lag = api.lagpattern.search(info)
             self.assertIsNotNone(lag)
-            self.assertEqual(int(lag.group("lag")), time)
+            self.assertEqual(float(lag.group('lag')), time)
 
 
 if __name__ == '__main__':  # pragma: no cover
-    try:
+    with suppress(SystemExit):
         unittest.main()
-    except SystemExit:
-        pass

@@ -28,11 +28,11 @@ The following parameters are supported:
 
 """
 #
-# (C) Pywikibot team, 2008-2017
+# (C) Pywikibot team, 2008-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import os.path
 
@@ -55,7 +55,7 @@ class DjVuTextBot(SingleSiteBot):
 
     def __init__(self, djvu, index, pages=None, **kwargs):
         """
-        Constructor.
+        Initializer.
 
         @param djvu: djvu from where to fetch the text layer
         @type djvu: DjVuFile object
@@ -71,7 +71,7 @@ class DjVuTextBot(SingleSiteBot):
         super(DjVuTextBot, self).__init__(site=index.site, **kwargs)
         self._djvu = djvu
         self._index = index
-        self._prefix = self._index.title(withNamespace=False)
+        self._prefix = self._index.title(with_ns=False)
         self._page_ns = self.site._proofread_page_ns.custom_name
 
         if not pages:
@@ -116,7 +116,10 @@ class DjVuTextBot(SingleSiteBot):
 
         summary = self.getOption('summary')
         if page.exists() and not self.getOption('force'):
-            pywikibot.output('Page %s already exists, not adding!' % page)
+            pywikibot.output(
+                'Page {} already exists, not adding!\n'
+                'Use -force option to overwrite the output page.'
+                .format(page))
         else:
             self.userPut(page, old_text, new_text, summary=summary)
 
@@ -128,7 +131,7 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     index = None
     djvu_path = '.'  # default djvu file directory
@@ -151,19 +154,19 @@ def main(*args):
         elif arg == '-always':
             options['always'] = True
         else:
-            pywikibot.output('Unknown argument %s' % arg)
+            pywikibot.output('Unknown argument ' + arg)
 
     # index is mandatory.
     if not index:
         pywikibot.bot.suggest_help(missing_parameters=['-index'])
-        return False
+        return
 
-    # If djvu_path is not a fle, build djvu_path from dir+index.
+    # If djvu_path is not a file, build djvu_path from dir+index.
     djvu_path = os.path.expanduser(djvu_path)
     djvu_path = os.path.abspath(djvu_path)
     if not os.path.exists(djvu_path):
-        pywikibot.error('No such file or directory: %s' % djvu_path)
-        return False
+        pywikibot.error('No such file or directory: ' + djvu_path)
+        return
     if os.path.isdir(djvu_path):
         djvu_path = os.path.join(djvu_path, index)
 
@@ -171,8 +174,9 @@ def main(*args):
     djvu = DjVuFile(djvu_path)
 
     if not djvu.has_text():
-        pywikibot.error('No text layer in djvu file %s' % djvu.file_djvu)
-        return False
+        pywikibot.error('No text layer in djvu file {}'
+                        .format(djvu.file_djvu))
+        return
 
     # Parse pages param.
     pages = pages.split(',')
@@ -187,16 +191,17 @@ def main(*args):
 
     site = pywikibot.Site()
     if not site.has_extension('ProofreadPage'):
-        pywikibot.error('Site %s must have ProofreadPage extension.' % site)
-        return False
+        pywikibot.error('Site {} must have ProofreadPage extension.'
+                        .format(site))
+        return
 
     index_page = pywikibot.Page(site, index, ns=site.proofread_index_ns)
 
     if not index_page.exists():
         raise pywikibot.NoPage(index)
 
-    pywikibot.output('uploading text from %s to %s'
-                     % (djvu.file_djvu, index_page.title(asLink=True)))
+    pywikibot.output('uploading text from {} to {}'
+                     .format(djvu.file_djvu, index_page.title(as_link=True)))
 
     bot = DjVuTextBot(djvu, index_page, pages, **options)
     bot.run()

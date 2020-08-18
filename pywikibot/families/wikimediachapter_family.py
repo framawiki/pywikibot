@@ -1,30 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Family module for Wikimedia chapter wikis."""
+"""Family module for Wikimedia chapter, thematic organisation and WUG wikis."""
 #
-# (C) Pywikibot team, 2012-2015
+# (C) Pywikibot team, 2012-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot import family
-from pywikibot.tools import deprecated
+from pywikibot.tools import deprecated, classproperty
 
 
 class Family(family.SubdomainFamily, family.WikimediaFamily):
 
-    """Family for Wikimedia chapters hosted on wikimedia.org."""
+    """Family class for WCH, WTO and WUG wikis hosted on wikimedia.org."""
 
     name = 'wikimediachapter'
-    code_aliases = {}
+    code_aliases = {
+        'et': 'ee'
+    }
+
+    closed_wikis = ['nz', 'pa-us', ]
 
     codes = [
-        'ar', 'br', 'bd', 'co', 'dk', 'fi', 'mk', 'mx', 'nl', 'no',
-        'nyc', 'pl', 'rs', 'ru', 'se', 'ua', 'uk', 've',
+        'am', 'ar', 'bd', 'be', 'br', 'ca', 'cn', 'co', 'dk', 'ec', 'ee', 'fi',
+        'ge', 'gr', 'hi', 'id', 'id-internal', 'il', 'mai', 'mk', 'mx', 'ng',
+        'nl', 'no', 'nyc', 'pl', 'pt', 'punjabi', 'romd', 'rs', 'ru', 'se',
+        'tr', 'ua', 'uk', 've', 'wb',
     ]
 
-    @property
-    @deprecated
-    def countries(self):
+    @classproperty
+    @deprecated(since='20150621')
+    def countries(cls):
         """Deprecated."""
-        return self.codes
+        return cls.codes

@@ -11,12 +11,11 @@ If no starting name is provided, the bot starts at '!'.
 
 """
 #
-# (C) André Engels, 2006-2009
-# (C) Pywikibot team, 2006-2017
+# (C) Pywikibot team, 2006-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import pywikibot
 
@@ -33,7 +32,7 @@ class DisambiguationRedirectBot(MultipleSitesBot, AutomaticTWSummaryBot):
 
     def _create_callback(self, old, new):
         replace_callback = InteractiveReplace(
-            old, new, default='n', automatic_quit=False)
+            old, new, default='n')
         replace_callback.allow_replace = True
         replace_callback.allow_replace_label = True
         replace_callback.allow_replace_section = True
@@ -41,15 +40,16 @@ class DisambiguationRedirectBot(MultipleSitesBot, AutomaticTWSummaryBot):
         return replace_callback
 
     def treat_page(self):
-        """Iterate over the linked pages and replace redirects conditionally."""
+        """Iterate over linked pages and replace redirects conditionally."""
         text = self.current_page.text
         for linked_page in self.current_page.linkedPages():
             try:
                 target = linked_page.getRedirectTarget()
             except (pywikibot.Error, pywikibot.SectionError):
                 continue
-            # TODO: Work on all links at the same time (would mean that the user
-            # doesn't get them ordered like in links but how they appear in the page)
+            # TODO: Work on all links at the same time (would mean that the
+            # user doesn't get them ordered like in links but how they appear
+            # in the page)
             text = textlib.replace_links(
                 text, self._create_callback(linked_page, target),
                 self.current_page.site)
@@ -65,7 +65,7 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     local_args = pywikibot.handle_args(args)
 
@@ -76,7 +76,7 @@ def main(*args):
         mysite.disambcategory()
     except pywikibot.Error as e:
         pywikibot.bot.suggest_help(exception=e)
-        return False
+        return
 
     generator = pagegenerators.CategorizedPageGenerator(
         mysite.disambcategory(), start=start, content=True, namespaces=[0])
@@ -85,5 +85,5 @@ def main(*args):
     bot.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

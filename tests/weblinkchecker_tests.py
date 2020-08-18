@@ -1,26 +1,18 @@
 # -*- coding: utf-8 -*-
 """weblinkchecker test module."""
 #
-# (C) Pywikibot team, 2015
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import datetime
 
-from requests import ConnectionError as RequestsConnectionError
-
-from pywikibot.tools import PY2
-if not PY2:
-    from urllib.parse import urlparse
-else:
-    from urlparse import urlparse
+from contextlib import suppress
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from urllib.parse import urlparse
 
 from scripts import weblinkchecker
-
 from tests.aspects import unittest, require_modules, TestCase
-from tests import weblib_tests
 
 
 @require_modules('memento_client')
@@ -29,6 +21,9 @@ class MementoTestCase(TestCase):
     """Test memento client."""
 
     def _get_archive_url(self, url, date_string=None):
+        from memento_client.memento_client import \
+            MementoClientException
+
         if date_string is None:
             when = datetime.datetime.now()
         else:
@@ -36,25 +31,8 @@ class MementoTestCase(TestCase):
         try:
             return weblinkchecker._get_closest_memento_url(
                 url, when, self.timegate_uri)
-        except RequestsConnectionError as e:
+        except (RequestsConnectionError, MementoClientException) as e:
             self.skipTest(e)
-
-
-class WeblibTestMementoInternetArchive(MementoTestCase, weblib_tests.TestInternetArchive):
-
-    """Test InternetArchive Memento using old weblib tests."""
-
-    timegate_uri = 'http://web.archive.org/web/'
-    hostname = timegate_uri
-
-
-class WeblibTestMementoWebCite(MementoTestCase, weblib_tests.TestWebCite):
-
-    """Test WebCite Memento using old weblib tests."""
-
-    timegate_uri = 'http://timetravel.mementoweb.org/webcite/timegate/'
-    hostname = ('http://timetravel.mementoweb.org/webcite/'
-                'timemap/json/http://google.com')
 
 
 class TestMementoWebCite(MementoTestCase):
@@ -82,6 +60,10 @@ class TestMementoDefault(MementoTestCase):
 
     def test_newest(self):
         """Test getting memento for newest https://google.com."""
+        # Temporary increase the debug level for T196304
+        import logging
+        logging.basicConfig()
+        logging.getLogger().setLevel(logging.DEBUG)
         archivedversion = self._get_archive_url('https://google.com')
         self.assertIsNotNone(archivedversion)
 
@@ -94,7 +76,5 @@ class TestMementoDefault(MementoTestCase):
 
 
 if __name__ == '__main__':  # pragma: no cover
-    try:
+    with suppress(SystemExit):
         unittest.main()
-    except SystemExit:
-        pass

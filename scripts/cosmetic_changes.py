@@ -7,8 +7,6 @@ The changes are not supposed to change the look of the rendered wiki page.
 
 The following parameters are supported:
 
-&params;
-
 -always           Don't prompt you for each replacement. Warning (see below)
                   has not to be confirmed. ATTENTION: Use this with care!
 
@@ -21,18 +19,19 @@ The following parameters are supported:
 -ignore:          Ignores if an error occurred and either skips the page or
                   only that method. It can be set to 'page' or 'method'.
 
+The following generators and filters are supported:
+
+&params;
+
 &warning;
 
 For further information see pywikibot/cosmetic_changes.py
 """
 #
-# (C) xqt, 2009-2017
-# (C) Pywikibot team, 2006-2017
+# (C) Pywikibot team, 2006-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import pywikibot
 
 from pywikibot import config, cosmetic_changes, i18n, pagegenerators
@@ -55,42 +54,42 @@ class CosmeticChangesBot(MultipleSitesBot, ExistingPageBot, NoRedirectPageBot):
 
     """Cosmetic changes bot."""
 
-    def __init__(self, generator, **kwargs):
-        """Constructor."""
+    def __init__(self, generator, **kwargs) -> None:
+        """Initializer."""
         self.availableOptions.update({
             'async': False,
-            'summary': u'Robot: Cosmetic changes',
+            'summary': 'Robot: Cosmetic changes',
             'ignore': cosmetic_changes.CANCEL_ALL,
         })
-        super(CosmeticChangesBot, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
         self.generator = generator
 
-    def treat_page(self):
+    def treat_page(self) -> None:
         """Treat page with the cosmetic toolkit."""
-        ccToolkit = cosmetic_changes.CosmeticChangesToolkit.from_page(
-            self.current_page, False, self.getOption('ignore'))
-        changedText = ccToolkit.change(self.current_page.get())
-        if changedText is not False:
-            self.put_current(new_text=changedText,
+        cc_toolkit = cosmetic_changes.CosmeticChangesToolkit.from_page(
+            self.current_page, ignore=self.getOption('ignore'))
+        changed_text = cc_toolkit.change(self.current_page.get())
+        if changed_text is not False:
+            self.put_current(new_text=changed_text,
                              summary=self.getOption('summary'),
                              asynchronous=self.getOption('async'))
 
 
-def main(*args):
+def main(*args) -> None:
     """
     Process command line arguments and invoke bot.
 
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     options = {}
 
     # Process global args and prepare generator args parser
     local_args = pywikibot.handle_args(args)
-    genFactory = pagegenerators.GeneratorFactory()
+    gen_factory = pagegenerators.GeneratorFactory()
 
     for arg in local_args:
         if arg.startswith('-summary:'):
@@ -111,7 +110,7 @@ def main(*args):
                 raise ValueError(
                     'Unknown ignore mode "{0}"!'.format(ignore_mode))
         else:
-            genFactory.handleArg(arg)
+            gen_factory.handleArg(arg)
 
     site = pywikibot.Site()
 
@@ -120,7 +119,7 @@ def main(*args):
         options['summary'] = i18n.twtranslate(site,
                                               'cosmetic_changes-standalone')
 
-    gen = genFactory.getCombinedGenerator(preload=True)
+    gen = gen_factory.getCombinedGenerator(preload=True)
     if gen:
         if options.get('always') or config.simulate or pywikibot.input_yn(
                 warning + '\nDo you really want to continue?',
@@ -128,11 +127,9 @@ def main(*args):
             site.login()
             bot = CosmeticChangesBot(gen, **options)
             bot.run()
-        return True
     else:
         pywikibot.bot.suggest_help(missing_generator=True)
-        return False
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

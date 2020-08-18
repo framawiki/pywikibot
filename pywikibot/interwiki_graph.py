@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """Module with the Graphviz drawing calls."""
 #
-# (C) Pywikibot team, 2006-2016
+# (C) Pywikibot team, 2006-2018
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
+from collections import Counter
 import itertools
 import threading
 
@@ -18,7 +19,6 @@ except ImportError as e:
 import pywikibot
 
 from pywikibot import config2 as config
-from pywikibot.tools import Counter
 
 # deprecated value
 pydotfound = not isinstance(pydot, ImportError)
@@ -43,7 +43,7 @@ class GraphSavingThread(threading.Thread):
     """
 
     def __init__(self, graph, originPage):
-        """Constructor."""
+        """Initializer."""
         threading.Thread.__init__(self)
         self.graph = graph
         self.originPage = originPage
@@ -54,9 +54,9 @@ class GraphSavingThread(threading.Thread):
             filename = config.datafilepath(
                 'interwiki-graphs/' + getFilename(self.originPage, format))
             if self.graph.write(filename, prog='dot', format=format):
-                pywikibot.output(u'Graph saved as %s' % filename)
+                pywikibot.output('Graph saved as %s' % filename)
             else:
-                pywikibot.output(u'Graph could not be saved as %s' % filename)
+                pywikibot.output('Graph could not be saved as %s' % filename)
 
 
 class Subject(object):
@@ -64,10 +64,10 @@ class Subject(object):
     """Data about a page with translations on multiple wikis."""
 
     def __init__(self, origin=None):
-        """Constructor.
+        """Initializer.
 
         @param originPage: the page on the 'origin' wiki
-        @type originPage: Page
+        @type originPage: pywikibot.page.Page
         """
         # Remember the "origin page"
         self._origin = origin
@@ -93,7 +93,6 @@ class Subject(object):
 
     @origin.setter
     def origin(self, value):
-        """Page on the origin wiki."""
         self._origin = value
 
     @property
@@ -107,10 +106,6 @@ class Subject(object):
 
     @originPage.setter
     def originPage(self, value):
-        """Deprecated property for the origin page.
-
-        DEPRECATED. Use origin.
-        """
         self.origin = value
 
     @property
@@ -133,10 +128,10 @@ class GraphDrawer(object):
     """Graphviz (dot) code creator."""
 
     def __init__(self, subject):
-        """Constructor.
+        """Initializer.
 
         @param subject: page data to graph
-        @type subject: Subject
+        @type subject: pywikibot.interwiki_graph.Subject
 
         @raises GraphImpossible: pydot is not installed
         """
@@ -157,16 +152,16 @@ class GraphDrawer(object):
         each_site = [page.site for page in page_list
                      if page.exists() and not page.isRedirectPage()]
 
-        return set(x[0] for x in itertools.takewhile(
+        return {x[0] for x in itertools.takewhile(
             lambda x: x[1] > 1,
-            Counter(each_site).most_common()))
+            Counter(each_site).most_common())}
 
     def addNode(self, page):
         """Add a node for page."""
         node = pydot.Node(self.getLabel(page), shape='rectangle')
-        node.set_URL("\"http://%s%s\""
+        node.set_URL('"http://%s%s"'
                      % (page.site.hostname(),
-                        page.site.get_address(page.title(asUrl=True))))
+                        page.site.get_address(page.title(as_url=True))))
         node.set_style('filled')
         node.set_fillcolor('white')
         node.set_fontsize('11')
@@ -203,8 +198,8 @@ class GraphDrawer(object):
             # https://sourceforge.net/p/pywikipediabot/bugs/401/
             elif self.graph.get_edge(sourceLabel, targetLabel):
                 pywikibot.output(
-                    u'BUG: Tried to create duplicate edge from %s to %s'
-                    % (refPage.title(asLink=True), page.title(asLink=True)))
+                    'BUG: Tried to create duplicate edge from %s to %s'
+                    % (refPage.title(as_link=True), page.title(as_link=True)))
                 # duplicate edges would be bad because then get_edge() would
                 # give a list of edges, not a single edge when we handle the
                 # opposite edge.
@@ -234,7 +229,7 @@ class GraphDrawer(object):
 
         For more info see U{https://meta.wikimedia.org/wiki/Interwiki_graphs}
         """
-        pywikibot.output(u'Preparing graph for %s'
+        pywikibot.output('Preparing graph for %s'
                          % self.subject.originPage.title())
         # create empty graph
         self.graph = pydot.Dot()
@@ -260,7 +255,7 @@ def getFilename(page, extension=None):
     Create a filename that is unique for the page.
 
     @param page: page used to create the new filename
-    @type page: Page
+    @type page: pywikibot.page.Page
     @param extension: file extension
     @type extension: str
     @return: filename of <family>-<lang>-<page>.<ext>

@@ -26,12 +26,11 @@ The following generators and filters are supported:
 &params;
 """
 #
-# (C) Bináris, 2012
-# (C) Pywikibot team, 2012-2017
+# (C) Pywikibot team, 2012-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import pywikibot
 from pywikibot import i18n, pagegenerators
@@ -43,9 +42,7 @@ from pywikibot.tools.formatter import color_format
 
 # This is required for the text that is shown when you run this script
 # with the parameter -help.
-docuReplacements = {
-    '&params;': pagegenerators.parameterHelp
-}
+docuReplacements = {'&params;': pagegenerators.parameterHelp}  # noqa: N816
 
 
 class DashRedirectBot(
@@ -58,7 +55,7 @@ class DashRedirectBot(
 
     def __init__(self, generator, **kwargs):
         """
-        Constructor.
+        Initializer.
 
         @param generator: the page generator that determines which pages
             to work on
@@ -70,7 +67,7 @@ class DashRedirectBot(
             'reversed': False,  # switch bot behavior
         })
 
-        # call constructor of the super class
+        # call initializer of the super class
         super(DashRedirectBot, self).__init__(site=True, **kwargs)
 
         # assign the generator to the bot
@@ -91,8 +88,8 @@ class DashRedirectBot(
 
         # skip unchanged
         if redir.title() == origin:
-            pywikibot.output('No need to process %s, skipping…'
-                             % redir.title())
+            pywikibot.output('No need to process {0}, skipping...'
+                             .format(redir.title()))
             # suggest -reversed parameter
             if '-' in origin and not self.getOption('reversed'):
                 pywikibot.output('Consider using -reversed parameter '
@@ -100,13 +97,13 @@ class DashRedirectBot(
         else:
             # skip existing
             if redir.exists():
-                pywikibot.output('%s already exists, skipping…'
-                                 % redir.title())
+                pywikibot.output('{0} already exists, skipping...'
+                                 .format(redir.title()))
             else:
                 # confirm and save redirect
                 if self.user_confirm(
                     color_format(
-                        'Redirect from {lightblue}{0}{default} doesn\'t exist '
+                        "Redirect from {lightblue}{0}{default} doesn't exist "
                         'yet.\nDo you want to create it?',
                         redir.title())):
                     # If summary option is None, it takes the default
@@ -128,7 +125,7 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     options = {}
     # Process global arguments to determine desired site
@@ -137,13 +134,13 @@ def main(*args):
     # This factory is responsible for processing command line arguments
     # that are also used by other scripts and that determine on which pages
     # to work on.
-    genFactory = pagegenerators.GeneratorFactory()
+    gen_factory = pagegenerators.GeneratorFactory()
 
     # Parse command line arguments
     for arg in local_args:
 
         # Catch the pagegenerators options
-        if genFactory.handleArg(arg):
+        if gen_factory.handleArg(arg):
             continue  # nothing to do here
 
         # Now pick up custom options
@@ -158,15 +155,13 @@ def main(*args):
 
     # The preloading option is responsible for downloading multiple pages
     # from the wiki simultaneously.
-    gen = genFactory.getCombinedGenerator(preload=True)
+    gen = gen_factory.getCombinedGenerator(preload=True)
     if gen:
         # pass generator and private options to the bot
         bot = DashRedirectBot(gen, **options)
         bot.run()  # guess what it does
-        return True
     else:
         pywikibot.bot.suggest_help(missing_generator=True)
-        return False
 
 
 if __name__ == '__main__':

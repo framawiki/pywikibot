@@ -1,18 +1,27 @@
-.. image:: https://secure.travis-ci.org/wikimedia/pywikibot.png?branch=master
-   :alt: Build Status
+.. image:: https://travis-ci.org/wikimedia/pywikibot.svg?branch=master
+   :alt: Travis Build Status
    :target: https://travis-ci.org/wikimedia/pywikibot
-.. image:: https://codecov.io/gh/wikimedia/pywikibot/branch/master/graphs/badge.svg?branch=master
+.. image:: https://ci.appveyor.com/api/projects/status/xo2g4ctoom8k6yvw/branch/master?svg=true
+   :alt: AppVeyor Build Status
+   :target: https://ci.appveyor.com/project/ladsgroup/pywikibot-g4xqx
+.. image:: https://codecov.io/gh/wikimedia/pywikibot/branch/master/graph/badge.svg
    :alt: Code coverage
-   :target: http://codecov.io/github/wikimedia/pywikibot?branch=master
+   :target: https://codecov.io/gh/wikimedia/pywikibot
+.. image:: https://api.codeclimate.com/v1/badges/de6ca4c66e7c7bee4156/maintainability
+   :alt: Maintainability
+   :target: https://codeclimate.com/github/wikimedia/pywikibot/maintainability
+.. image:: https://img.shields.io/pypi/pyversions/pywikibot.svg
+   :alt: Python
+   :target: https://www.python.org/downloads/
 .. image:: https://img.shields.io/pypi/v/pywikibot.svg
    :alt: Pywikibot release
-   :target: https://pypi.python.org/pypi/pywikibot
+   :target: https://pypi.org/project/pywikibot/
 
 Pywikibot
 =========
 
 The Pywikibot framework is a Python library that interfaces with the
-`MediaWiki API <https://www.mediawiki.org/wiki/Special:MyLanguage/API:Main_page>`_
+`MediaWiki API <https://www.mediawiki.org/wiki/API:Main_page>`_
 version 1.14 or higher.
 
 Also included are various general function scripts that can be adapted for
@@ -34,10 +43,11 @@ Quick start
 Or to install using PyPI (excluding scripts)
 ::
 
-    pip install pywikibot --pre
+    pip install -U setuptools
+    pip install pywikibot
 
 Our `installation
-guide <https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Pywikibot/Installation>`_
+guide <https://www.mediawiki.org/wiki/Manual:Pywikibot/Installation>`_
 has more details for advanced usage.
 
 Basic Usage
@@ -66,13 +76,21 @@ It may require the following programs to function properly:
 
 * `7za`: To extract 7z files
 
-.. include:: HISTORY.rst
+Roadmap
+-------
+
+.. include:: ROADMAP.rst
+
+Release history
+---------------
+
+See https://github.com/wikimedia/pywikibot/blob/stable/HISTORY.rst
 
 Contributing
 ------------
 
 Our code is maintained on Wikimedia's `Gerrit installation <https://gerrit.wikimedia.org/>`_,
-`learn <https://www.mediawiki.org/wiki/Special:MyLanguage/Developer_access>`_ how to get
+`learn <https://www.mediawiki.org/wiki/Developer_account>`_ how to get
 started.
 
 .. include:: CODE_OF_CONDUCT.rst

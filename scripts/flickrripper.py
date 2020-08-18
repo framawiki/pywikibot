@@ -1,69 +1,57 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """
-Tool to copy a flickr stream to Commons.
+A tool to transfer flickr photos to Wikimedia Commons.
 
-# Get a set to work on (start with just a username).
-# * Make it possible to delimit the set (from/to)
-#For each image
-#*Check the license
-#*Check if it isn't already on Commons
-#*Build suggested filename
-#**Check for name collision and maybe alter it
-#*Pull description from Flinfo
-#*Show image and description to user
-#**Add a nice hotcat lookalike for the adding of categories
-#**Filter the categories
-#*Upload the image
+The following parameters are supported:
 
-Todo:
-*Check if the image is already uploaded (SHA hash)
-*Check and prevent filename collisions
-**Initial suggestion
-**User input
-*Filter the categories
+ -group_id:         specify group ID of the pool
+ -photoset_id:      specify a photoset id
+ -user_id:          give the user id of the flickrriper user
+ -start_id:         the photo id to start with
+ -end_id:           the photo id to end with
+ -tags:             a tag to filter photo items (only one is supported)
+ -flickerreview     add a flickr review template to the description
+ -reviewer:         specify the reviewer
+ -override:         override text for licence
+ -addcategory:      specify a category
+ -removecategories  remove all categories
+ -autonomous        run bot in autonomous mode
 """
 #
-# (C) Multichill, 2009
-# (C) Pywikibot team, 2009-2017
+# (C) Pywikibot team, 2009-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import base64
 import hashlib
 import io
 import re
-import sys
-import time
-
-if sys.version_info[0] > 2:
-    from urllib.parse import urlencode
-else:
-    from urllib import urlencode
-
-try:
-    import flickrapi                # see: http://stuvel.eu/projects/flickrapi
-except ImportError as e:
-    print('This script requires the python flickrapi module. \n'
-          'See: http://stuvel.eu/projects/flickrapi')
-    print(e)
-    sys.exit(1)
 
 import pywikibot
-
 from pywikibot import config, textlib
 from pywikibot.comms.http import fetch
-
 from pywikibot.specialbots import UploadRobot
+from pywikibot.tools import PY2
 
 try:
     from pywikibot.userinterfaces.gui import Tkdialog
 except ImportError as _tk_error:
     Tkdialog = _tk_error
 
+if not PY2:
+    from urllib.parse import urlencode
+else:
+    from urllib import urlencode
 
+try:
+    import flickrapi  # see: http://stuvel.eu/projects/flickrapi
+except ImportError as e:
+    flickrapi = e
+
+# see https://www.flickr.com/services/api/flickr.photos.licenses.getInfo.html
 flickr_allowed_license = {
     0: False,  # All Rights Reserved
     1: False,  # Creative Commons Attribution-NonCommercial-ShareAlike License
@@ -74,6 +62,8 @@ flickr_allowed_license = {
     6: False,  # Creative Commons Attribution-NoDerivs License
     7: True,   # No known copyright restrictions
     8: True,   # United States Government Work
+    9: True,   # Public Domain Dedication (CC0)
+    10: True,  # Public Domain Mark
 }
 
 
@@ -86,14 +76,14 @@ def getPhoto(flickr, photo_id):
     """
     while True:
         try:
-            photoInfo = flickr.photos_getInfo(photo_id=photo_id)
+            photoInfo = flickr.photos.getInfo(photo_id=photo_id)
             # xml.etree.ElementTree.dump(photoInfo)
-            photoSizes = flickr.photos_getSizes(photo_id=photo_id)
+            photoSizes = flickr.photos.getSizes(photo_id=photo_id)
             # xml.etree.ElementTree.dump(photoSizes)
             return photoInfo, photoSizes
         except flickrapi.exceptions.FlickrError:
-            pywikibot.output(u'Flickr api problem, sleeping')
-            time.sleep(30)
+            pywikibot.output('Flickr api problem, sleeping')
+            pywikibot.sleep(30)
 
 
 def isAllowedLicense(photoInfo):
@@ -102,11 +92,8 @@ def isAllowedLicense(photoInfo):
 
     TODO: Maybe add more licenses
     """
-    license = photoInfo.find('photo').attrib['license']
-    if flickr_allowed_license[int(license)]:
-        return True
-    else:
-        return False
+    photo_license = photoInfo.find('photo').attrib['license']
+    return flickr_allowed_license[int(photo_license)]
 
 
 def getPhotoUrl(photoSizes):
@@ -141,7 +128,7 @@ def findDuplicateImages(photo, site=None):
     @type photo: io.BytesIO
     @param site: Site to search for duplicates.
         Defaults to using Wikimedia Commons if not supplied.
-    @type site: APISite or None
+    @type site: pywikibot.site.APISite or None
     """
     if not site:
         site = pywikibot.Site('commons', 'commons')
@@ -150,13 +137,15 @@ def findDuplicateImages(photo, site=None):
     return site.getFilesFromAnHash(base64.b16encode(hashObject.digest()))
 
 
-def getTags(photoInfo):
-    """Get all the tags on a photo."""
-    result = []
-    for tag in photoInfo.find('photo').find('tags').findall('tag'):
-        result.append(tag.text.lower())
+def getTags(photoInfo, raw=False):
+    """Get all the tags on a photo.
 
-    return result
+    @param raw: use original tag name
+        see https://www.flickr.com/services/api/misc.tags.html
+    @type raw: bool
+    """
+    return [tag.attrib['raw'].lower() if raw else tag.text.lower()
+            for tag in photoInfo.find('photo').find('tags').findall('tag')]
 
 
 def getFlinfoDescription(photo_id):
@@ -168,18 +157,19 @@ def getFlinfoDescription(photo_id):
     parameters = urlencode({'id': photo_id, 'raw': 'on'})
 
     return fetch(
-        'http://wikipedia.ramselehof.de/flinfo.php?%s' % parameters).content
+        'http://wikipedia.ramselehof.de/flinfo.php?%s' % parameters).text
 
 
-def getFilename(photoInfo, site=None, project=u'Flickr'):
+def getFilename(photoInfo, site=None, project='Flickr', photo_url=None):
     """Build a good filename for the upload based on the username and title.
 
     Prevents naming collisions.
 
     """
     if not site:
-        site = pywikibot.Site(u'commons', u'commons')
+        site = pywikibot.Site('commons', 'commons')
     username = photoInfo.find('photo').find('owner').attrib['username']
+    username = cleanUpTitle(username)
     title = photoInfo.find('photo').find('title').text
     if title:
         title = cleanUpTitle(title)
@@ -198,20 +188,19 @@ def getFilename(photoInfo, site=None, project=u'Flickr'):
                 description = description[:items]
             title = cleanUpTitle(description)
         else:
-            title = u''
-            # Should probably have the id of the photo as last resort.
+            # Use the id of the photo as last resort.
+            title = photoInfo.find('photo').attrib['id']
 
-    if pywikibot.Page(site, u'File:%s - %s - %s.jpg'
-                      % (title, project, username)).exists():
-        i = 1
-        while True:
-            name = '%s - %s - %s (%d).jpg' % (title, project, username, i)
-            if pywikibot.Page(site, 'File:' + name).exists():
-                i += 1
-            else:
-                return name
-    else:
-        return u'%s - %s - %s.jpg' % (title, project, username)
+    fileformat = photoInfo.find('photo').attrib['originalformat']
+    if not fileformat and photo_url:
+        _, fileformat = photo_url.rsplit('.', 1)
+    filename = '{} - {} - {}.{}'.format(title, project, username, fileformat)
+    i = 1
+    while pywikibot.FilePage(site, filename).exists():
+        filename = '{} - {} - {} ({}).{}'.format(title, project, username,
+                                                 i, fileformat)
+        i += 1
+    return filename
 
 
 def cleanUpTitle(title):
@@ -234,52 +223,74 @@ def cleanUpTitle(title):
     title = re.sub('[;]', ',', title)
     title = re.sub(r'[/+\\:]', '-', title)
     title = re.sub('--+', '-', title)
-    title = re.sub(',,+', ',', title)
+    title = re.sub('[,|]+', ',', title)
     title = re.sub('[-,^]([.]|$)', r'\1', title)
     title = title.replace(' ', '_')
     title = title.strip('_')
     return title
 
 
-def buildDescription(flinfoDescription=u'', flickrreview=False, reviewer=u'',
-                     override=u'', addCategory=u'', removeCategories=False):
+def buildDescription(flinfoDescription='', flickrreview=False, reviewer='',
+                     override='', addCategory='', removeCategories=False):
     """Build the final description for the image.
 
     The description is based on the info from flickrinfo and improved.
 
     """
-    description = u'== {{int:filedesc}} ==\n%s' % flinfoDescription
+    description = flinfoDescription
+    # use template {{Taken on}}
+    datetaken = re.search(r'\|Date=(.*)\n', description).group(1)
+    if datetaken:
+        datetaken = '{{Taken on|%s}}' % (datetaken)
+        description = re.sub(r'\|Date=.*\n', '|Date={}\n'.format(datetaken),
+                             description)
     if removeCategories:
         description = textlib.removeCategoryLinks(description,
-                                                  pywikibot.Site(
-                                                      'commons', 'commons'))
+                                                  pywikibot.Site('commons',
+                                                                 'commons'))
     if override:
-        description = description.replace(u'{{cc-by-sa-2.0}}\n', u'')
-        description = description.replace(u'{{cc-by-2.0}}\n', u'')
-        description = description.replace(u'{{flickrreview}}\n', u'')
+        description = description.replace('{{cc-by-sa-2.0}}\n', '')
+        description = description.replace('{{cc-by-2.0}}\n', '')
+        description = description.replace('{{flickrreview}}\n', '')
         description = description.replace(
             '{{copyvio|Flickr, licensed as "All Rights Reserved" which is not '
             'a free license --~~~~}}\n',
             '')
-        description = description.replace(u'=={{int:license}}==',
-                                          u'=={{int:license}}==\n' + override)
-    elif flickrreview:
-        if reviewer:
-            description = description.replace(
-                '{{flickrreview}}',
-                '{{flickrreview|' + reviewer +
-                '|{{subst:CURRENTYEAR}}-{{subst:CURRENTMONTH}}-{{subst:CURRENTDAY2}}}}')
+        description = description.replace('=={{int:license}}==',
+                                          '=={{int:license}}==\n' + override)
+    elif flickrreview and reviewer:
+        description = description.replace(
+            '{{flickrreview}}',
+            '{{flickrreview|%s|'
+            '{{subst:CURRENTYEAR}}-{{subst:CURRENTMONTH}}-'
+            '{{subst:CURRENTDAY2}}}}' % reviewer)
+
+    if '{{subst:unc}}' not in description:
+        # Request category check
+        description += '\n{{subst:chc}}\n'
     if addCategory:
-        description = description.replace(u'{{subst:unc}}\n', u'')
-        description = description + u'\n[[Category:' + addCategory + ']]\n'
-    description = description.replace(u'\r\n', u'\n')
+        description = description.replace('{{subst:unc}}\n', '')
+        description += '\n[[Category:{}]]\n'.format(addCategory)
+    description = description.replace('\r\n', '\n')
     return description
 
 
-def processPhoto(flickr, photo_id=u'', flickrreview=False, reviewer=u'',
-                 override=u'', addCategory=u'', removeCategories=False,
+def processPhoto(flickr, photo_id='', flickrreview=False, reviewer='',
+                 override='', addCategory='', removeCategories=False,
                  autonomous=False):
-    """Process a single Flickr photo."""
+    """Process a single Flickr photo.
+
+    For each image:
+      * Check the license
+      * Check if it isn't already on Commons
+      * Build suggested filename
+        * Check for name collision and maybe alter it
+      * Pull description from Flinfo
+      * Show image and description to user
+        * Add a nice hotcat lookalike for the adding of categories
+        * Filter the categories
+      * Upload the image
+    """
     if photo_id:
         pywikibot.output(str(photo_id))
         (photoInfo, photoSizes) = getPhoto(flickr, photo_id)
@@ -292,10 +303,16 @@ def processPhoto(flickr, photo_id=u'', flickrreview=False, reviewer=u'',
         # Don't upload duplicate images, should add override option
         duplicates = findDuplicateImages(photo)
         if duplicates:
-            pywikibot.output(u'Found duplicate image at %s' % duplicates.pop())
+            pywikibot.output('Found duplicate image at {}'
+                             .format(duplicates.pop()))
         else:
-            filename = getFilename(photoInfo)
+            filename = getFilename(photoInfo, photo_url=photoUrl)
             flinfoDescription = getFlinfoDescription(photo_id)
+            if 'Blacklisted user' in flinfoDescription:
+                pywikibot.warning('Blacklisted user found:\n'
+                                  + flinfoDescription)
+                return 0
+
             photoDescription = buildDescription(flinfoDescription,
                                                 flickrreview, reviewer,
                                                 override, addCategory,
@@ -318,30 +335,31 @@ def processPhoto(flickr, photo_id=u'', flickrreview=False, reviewer=u'',
                 newPhotoDescription = photoDescription
                 newFilename = filename
                 skip = False
-        # pywikibot.output(newPhotoDescription)
-        # if (pywikibot.Page(title=u'File:'+ filename, site=pywikibot.Site()).exists()):
-        # TODO: Check if the hash is the same and if not upload it under a different name
-        # pywikibot.output(u'File:' + filename + u' already exists!')
-        # else:
+
             # Do the actual upload
-            # Would be nice to check before I upload if the file is already at Commons
-            # Not that important for this program, but maybe for derived programs
+            # Would be nice to check before I upload if the file is already at
+            # Commons. Not that important for this program, but maybe for
+            # derived programs
             if not skip:
                 bot = UploadRobot(photoUrl,
                                   description=newPhotoDescription,
-                                  useFilename=newFilename,
-                                  keepFilename=True,
-                                  verifyDescription=False)
-                bot.upload_image(debug=False)
+                                  use_filename=newFilename,
+                                  keep_filename=True,
+                                  verify_description=False)
+                bot.upload_file()
                 return 1
     else:
-        pywikibot.output(u'Invalid license')
+        pywikibot.output('Invalid license')
     return 0
 
 
-def getPhotos(flickr, user_id=u'', group_id=u'', photoset_id=u'',
-              start_id='', end_id='', tags=u''):
-    """Loop over a set of Flickr photos."""
+def getPhotos(flickr, user_id='', group_id='', photoset_id='',
+              start_id='', end_id='', tags=''):
+    """Loop over a set of Flickr photos.
+
+    Get a set to work on (start with just a username).
+      * Make it possible to delimit the set (from/to)
+    """
     found_start_id = not start_id
 
     # https://www.flickr.com/services/api/flickr.groups.pools.getPhotos.html
@@ -352,28 +370,34 @@ def getPhotos(flickr, user_id=u'', group_id=u'', photoset_id=u'',
                                                user_id=user_id, tags=tags,
                                                per_page='100', page='1')
         pages = photos.find('photos').attrib['pages']
-        gen = lambda i: flickr.groups_pools_getPhotos(  # noqa: E731
-            group_id=group_id, user_id=user_id, tags=tags,
-            per_page='100', page=i
-        ).find('photos').getchildren()
+
+        def gen(i):
+            return list(flickr.groups_pools_getPhotos(
+                group_id=group_id, user_id=user_id, tags=tags,
+                per_page='100', page=i
+            ).find('photos'))
     # https://www.flickr.com/services/api/flickr.photosets.getPhotos.html
     # Get the photos in a photoset
     elif photoset_id:
         photos = flickr.photosets_getPhotos(photoset_id=photoset_id,
                                             per_page='100', page='1')
         pages = photos.find('photoset').attrib['pages']
-        gen = lambda i: flickr.photosets_getPhotos(  # noqa: E731
-            photoset_id=photoset_id, per_page='100', page=i
-        ).find('photoset').getchildren()
+
+        def gen(i):
+            return list(flickr.photosets_getPhotos(
+                photoset_id=photoset_id, per_page='100', page=i
+            ).find('photoset'))
     # https://www.flickr.com/services/api/flickr.people.getPublicPhotos.html
     # Get the (public) photos uploaded by a user
     elif user_id:
         photos = flickr.people_getPublicPhotos(user_id=user_id,
                                                per_page='100', page='1')
         pages = photos.find('photos').attrib['pages']
-        gen = lambda i: flickr.people_getPublicPhotos(  # noqa: E731
-            user_id=user_id, per_page='100', page=i
-        ).find('photos').getchildren()
+
+        def gen(i):
+            return list(flickr.people_getPublicPhotos(
+                user_id=user_id, per_page='100', page=i
+            ).find('photos'))
     for i in range(1, int(pages) + 1):
         gotPhotos = False
         while not gotPhotos:
@@ -390,25 +414,8 @@ def getPhotos(flickr, user_id=u'', group_id=u'', photoset_id=u'',
                             yield photo.attrib['id']
             except flickrapi.exceptions.FlickrError:
                 gotPhotos = False
-                pywikibot.output(u'Flickr api problem, sleeping')
-                time.sleep(30)
-
-    return
-
-
-def usage():
-    """
-    Print usage information.
-
-    TODO : Need more.
-    """
-    pywikibot.output(
-        u"Flickrripper is a tool to transfer flickr photos to Wikimedia Commons")
-    pywikibot.output(u"-group_id:<group_id>\n")
-    pywikibot.output(u"-photoset_id:<photoset_id>\n")
-    pywikibot.output(u"-user_id:<user_id>\n")
-    pywikibot.output(u"-tags:<tag>\n")
-    return
+                pywikibot.output('Flickr api problem, sleeping')
+                pywikibot.sleep(30)
 
 
 def main(*args):
@@ -418,30 +425,17 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     local_args = pywikibot.handle_args(args)
 
-    # Get the api key
-    if not config.flickr['api_key']:
-        pywikibot.output('Flickr api key not found! Get yourself an api key')
-        pywikibot.output(
-            'Any flickr user can get a key at https://www.flickr.com/services/api/keys/apply/')
-        return
-
-    if 'api_secret' in config.flickr and config.flickr['api_secret']:
-        flickr = flickrapi.FlickrAPI(config.flickr['api_key'], config.flickr['api_secret'])
-    else:
-        pywikibot.output('Accessing public content only')
-        flickr = flickrapi.FlickrAPI(config.flickr['api_key'])
-
-    group_id = u''
-    photoset_id = u''
-    user_id = u''
-    start_id = u''
-    end_id = u''
-    tags = u''
-    addCategory = u''
+    group_id = ''
+    photoset_id = ''
+    user_id = ''
+    start_id = ''
+    end_id = ''
+    tags = ''
+    addCategory = ''
     removeCategories = False
     autonomous = False
     totalPhotos = 0
@@ -456,67 +450,65 @@ def main(*args):
     # Set the Flickr reviewer
     if config.flickr['reviewer']:
         reviewer = config.flickr['reviewer']
-    elif 'commons' in config.sysopnames['commons']:
-        pywikibot.output(config.sysopnames['commons'])
-        reviewer = config.sysopnames['commons']['commons']
     elif 'commons' in config.usernames['commons']:
         reviewer = config.usernames['commons']['commons']
     else:
-        reviewer = u''
+        reviewer = ''
 
     # Should be renamed to overrideLicense or something like that
-    override = u''
+    override = ''
     for arg in local_args:
         if arg.startswith('-group_id'):
             if len(arg) == 9:
-                group_id = pywikibot.input(u'What is the group_id of the pool?')
+                group_id = pywikibot.input('What is the group_id of the pool?')
             else:
                 group_id = arg[10:]
         elif arg.startswith('-photoset_id'):
             if len(arg) == 12:
-                photoset_id = pywikibot.input(u'What is the photoset_id?')
+                photoset_id = pywikibot.input('What is the photoset_id?')
             else:
                 photoset_id = arg[13:]
         elif arg.startswith('-user_id'):
             if len(arg) == 8:
                 user_id = pywikibot.input(
-                    u'What is the user_id of the flickr user?')
+                    'What is the user_id of the flickr user?')
             else:
                 user_id = arg[9:]
         elif arg.startswith('-start_id'):
             if len(arg) == 9:
                 start_id = pywikibot.input(
-                    u'What is the id of the photo you want to start at?')
+                    'What is the id of the photo you want to start at?')
             else:
                 start_id = arg[10:]
         elif arg.startswith('-end_id'):
             if len(arg) == 7:
                 end_id = pywikibot.input(
-                    u'What is the id of the photo you want to end at?')
+                    'What is the id of the photo you want to end at?')
             else:
                 end_id = arg[8:]
         elif arg.startswith('-tags'):
             if len(arg) == 5:
                 tags = pywikibot.input(
-                    u'What is the tag you want to filter out (currently only one supported)?')
+                    'What is the tag you want to filter out (currently only '
+                    'one supported)?')
             else:
                 tags = arg[6:]
         elif arg == '-flickrreview':
             flickrreview = True
         elif arg.startswith('-reviewer'):
             if len(arg) == 9:
-                reviewer = pywikibot.input(u'Who is the reviewer?')
+                reviewer = pywikibot.input('Who is the reviewer?')
             else:
                 reviewer = arg[10:]
         elif arg.startswith('-override'):
             if len(arg) == 9:
-                override = pywikibot.input(u'What is the override text?')
+                override = pywikibot.input('What is the override text?')
             else:
                 override = arg[10:]
         elif arg.startswith('-addcategory'):
             if len(arg) == 12:
                 addCategory = pywikibot.input(
-                    u'What category do you want to add?')
+                    'What category do you want to add?')
             else:
                 addCategory = arg[13:]
         elif arg == '-removecategories':
@@ -524,19 +516,34 @@ def main(*args):
         elif arg == '-autonomous':
             autonomous = True
 
-    if user_id or group_id or photoset_id:
+    if isinstance(flickrapi, ImportError):
+        pywikibot.bot.suggest_help(missing_dependencies=('flickrapi',))
+
+    elif not config.flickr['api_key']:
+        additional_text = (
+            'Flickr api key not found! Get yourself an api key\n'
+            'Any flickr user can get a key at\n'
+            'https://www.flickr.com/services/api/keys/apply/')
+        pywikibot.bot.suggest_help(additional_text=additional_text)
+
+    elif user_id or group_id or photoset_id:
+        if 'api_secret' in config.flickr and config.flickr['api_secret']:
+            flickr = flickrapi.FlickrAPI(config.flickr['api_key'],
+                                         config.flickr['api_secret'])
+        else:
+            pywikibot.output('Accessing public content only')
+            flickr = flickrapi.FlickrAPI(config.flickr['api_key'])
+
         for photo_id in getPhotos(flickr, user_id, group_id, photoset_id,
                                   start_id, end_id, tags):
             uploadedPhotos += processPhoto(flickr, photo_id, flickrreview,
                                            reviewer, override, addCategory,
                                            removeCategories, autonomous)
             totalPhotos += 1
-    else:
-        usage()
-    pywikibot.output(u'Finished running')
-    pywikibot.output(u'Total photos: ' + str(totalPhotos))
-    pywikibot.output(u'Uploaded photos: ' + str(uploadedPhotos))
+        pywikibot.output('Finished running')
+        pywikibot.output('Total photos: ' + str(totalPhotos))
+        pywikibot.output('Uploaded photos: ' + str(uploadedPhotos))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,32 +1,24 @@
 # -*- coding: utf-8 -*-
 """Classes for detecting a MediaWiki site."""
 #
-# (C) Pywikibot team, 2010-2015
+# (C) Pywikibot team, 2010-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import json
 import re
 
-from requests import RequestException
+from contextlib import suppress
+from html.parser import HTMLParser
+from urllib.parse import urljoin, urlparse
+
+from requests.exceptions import RequestException
 
 import pywikibot
 
 from pywikibot.comms.http import fetch
 from pywikibot.exceptions import ServerError
-from pywikibot.tools import MediaWikiVersion, PY2, PYTHON_VERSION
-
-if not PY2:
-    from html.parser import HTMLParser
-    from urllib.parse import urljoin, urlparse
-else:
-    try:
-        from future.backports.html.parser import HTMLParser
-    except ImportError:
-        from HTMLParser import HTMLParser
-    from urlparse import urljoin, urlparse
+from pywikibot.tools import MediaWikiVersion
 
 
 SERVER_DB_ERROR_MSG = \
@@ -46,13 +38,14 @@ class MWSite(object):
 
     def __init__(self, fromurl):
         """
-        Constructor.
+        Initializer.
 
-        @raises ServerError: a server error occurred while loading the site
+        @raises pywikibot.exceptions.ServerError: a server error occurred
+            while loading the site
         @raises Timeout: a timeout occurred while loading the site
         @raises RuntimeError: Version not found or version less than 1.14
         """
-        if fromurl.endswith("$1"):
+        if fromurl.endswith('$1'):
             fromurl = fromurl[:-2]
         r = fetch(fromurl)
         check_response(r)
@@ -63,7 +56,7 @@ class MWSite(object):
 
         self.fromurl = fromurl
 
-        data = r.content
+        data = r.text
 
         wp = WikiHTMLPageParser(fromurl)
         wp.feed(data)
@@ -104,8 +97,8 @@ class MWSite(object):
                 raise RuntimeError('Unable to determine articlepath: '
                                    '{0}'.format(self.fromurl))
 
-        if (not self.version or
-                self.version < MediaWikiVersion('1.14')):
+        if (not self.version
+                or self.version < MediaWikiVersion('1.14')):
             raise RuntimeError('Unsupported version: {0}'.format(self.version))
 
     def __repr__(self):
@@ -116,14 +109,15 @@ class MWSite(object):
     def langs(self):
         """Build interwikimap."""
         response = fetch(
-            self.api +
-            "?action=query&meta=siteinfo&siprop=interwikimap&sifilteriw=local&format=json")
-        iw = json.loads(response.content)
+            self.api
+            + '?action=query&meta=siteinfo&siprop=interwikimap'
+              '&sifilteriw=local&format=json')
+        iw = json.loads(response.text)
         if 'error' in iw:
             raise RuntimeError('%s - %s' % (iw['error']['code'],
                                             iw['error']['info']))
         return [wiki for wiki in iw['query']['interwikimap']
-                if u'language' in wiki]
+                if 'language' in wiki]
 
     def _parse_pre_117(self, data):
         """Parse HTML."""
@@ -131,11 +125,9 @@ class MWSite(object):
             pywikibot.log(
                 'wgEnableApi is not enabled in HTML of %s'
                 % self.fromurl)
-        try:
+        with suppress(AttributeError):
             self.version = MediaWikiVersion(
                 self.REwgVersion.search(data).group(1))
-        except AttributeError:
-            pass
 
         self.server = self.REwgServer.search(data).groups()[0]
         self.scriptpath = self.REwgScriptPath.search(data).groups()[0]
@@ -146,17 +138,17 @@ class MWSite(object):
         """Extract the version from API help with ?version enabled."""
         if self.version is None:
             try:
-                d = fetch(self.api + '?version&format=json').content
+                d = fetch(self.api + '?version&format=json').text
                 try:
                     d = json.loads(d)
                 except ValueError:
-                    # Fallback for old versions which didnt wrap help in json
+                    # Fallback for old versions which didn't wrap help in json
                     d = {'error': {'*': d}}
 
                 self.version = list(filter(
-                    lambda x: x.startswith("MediaWiki"),
-                    [l.strip()
-                     for l in d['error']['*'].split("\n")]))[0].split()[1]
+                    lambda x: x.startswith('MediaWiki'),
+                    (line.strip()
+                     for line in d['error']['*'].split('\n'))))[0].split()[1]
             except Exception:
                 pass
             else:
@@ -167,14 +159,27 @@ class MWSite(object):
         response = fetch(self.api + '?action=query&meta=siteinfo&format=json')
         check_response(response)
         # remove preleading newlines and Byte Order Mark (BOM), see T128992
-        content = response.content.strip().lstrip('\uFEFF')
+        content = response.text.strip().lstrip('\uFEFF')
         info = json.loads(content)
-        self.private_wiki = ('error' in info and
-                             info['error']['code'] == 'readapidenied')
+        self.private_wiki = ('error' in info
+                             and info['error']['code'] == 'readapidenied')
         if self.private_wiki:
-            return
-
-        info = info['query']['general']
+            # user-config.py is not loaded because PYWIKIBOT_NO_USER_CONFIG
+            # is set to '2' by generate_family_file.py.
+            # Prepare a temporary config for login.
+            username = pywikibot.input(
+                'Private wiki detected. Login is required.\n'
+                'Please enter your username?')
+            # Setup a dummy family so that we can create a site object
+            fam = pywikibot.family.AutoFamily(
+                'temporary_family',
+                self.api[:-8])
+            site = pywikibot.Site(fam.code, fam, username)
+            site.version = lambda: str(self.version)
+            # Now the site object is able to login
+            info = site.siteinfo
+        else:
+            info = info['query']['general']
         self.version = MediaWikiVersion.from_generator(info['generator'])
         if self.version < MediaWikiVersion('1.17'):
             return
@@ -185,8 +190,8 @@ class MWSite(object):
 
     def __eq__(self, other):
         """Return True if equal to other."""
-        return (self.server + self.scriptpath ==
-                other.server + other.scriptpath)
+        return (self.server + self.scriptpath
+                == other.server + other.scriptpath)
 
     def __hash__(self):
         """Get hashable representation."""
@@ -202,7 +207,7 @@ class MWSite(object):
         if self.server is None or self.scriptpath is None:
             return
 
-        return self.server + self.scriptpath + "/api.php"
+        return self.server + self.scriptpath + '/api.php'
 
     @property
     def iwpath(self):
@@ -215,11 +220,8 @@ class WikiHTMLPageParser(HTMLParser):
     """Wiki HTML page parser."""
 
     def __init__(self, url):
-        """Constructor."""
-        if PYTHON_VERSION < (3, 4):
-            HTMLParser.__init__(self)
-        else:
-            super().__init__(convert_charrefs=True)
+        """Initializer."""
+        super().__init__(convert_charrefs=True)
         self.url = urlparse(url)
         self.generator = None
         self.version = None
@@ -268,8 +270,8 @@ class WikiHTMLPageParser(HTMLParser):
                         return
 
                 # allow http://www.brickwiki.info/ vs http://brickwiki.info/
-                if (new_parsed_url.netloc in self._parsed_url.netloc or
-                        self._parsed_url.netloc in new_parsed_url.netloc):
+                if (new_parsed_url.netloc in self._parsed_url.netloc
+                        or self._parsed_url.netloc in new_parsed_url.netloc):
                     return
 
                 assert new_parsed_url == self._parsed_url, '{0} != {1}'.format(
@@ -283,14 +285,12 @@ class WikiHTMLPageParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         """Handle an opening tag."""
         attrs = dict(attrs)
-        if tag == "meta":
+        if tag == 'meta':
             if attrs.get('name') == 'generator':
-                self.generator = attrs["content"]
-                try:
+                self.generator = attrs['content']
+                with suppress(ValueError):
                     self.version = MediaWikiVersion.from_generator(
                         self.generator)
-                except ValueError:
-                    pass
         elif tag == 'link' and 'rel' in attrs and 'href' in attrs:
             if attrs['rel'] in ('EditURI', 'stylesheet', 'search'):
                 self.set_api_url(attrs['href'])
@@ -306,5 +306,5 @@ def check_response(response):
         raise ServerError('Bad Gateway')
     elif response.status == 500:
         raise ServerError('Internal Server Error')
-    elif response.status == 200 and SERVER_DB_ERROR_MSG in response.content:
+    elif response.status == 200 and SERVER_DB_ERROR_MSG in response.text:
         raise ServerError('Server cannot access the database')

@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Family module for Wikimedia outreach wiki."""
 #
-# (C) Pywikibot team, 2014-2015
+# (C) Pywikibot team, 2014-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot import family
 
 
@@ -17,8 +15,4 @@ class Family(family.WikimediaOrgFamily):
 
     name = 'outreach'
 
-    def __init__(self):
-        """Constructor."""
-        super(Family, self).__init__()
-
-        self.interwiki_forward = 'wikipedia'
+    interwiki_forward = 'wikipedia'

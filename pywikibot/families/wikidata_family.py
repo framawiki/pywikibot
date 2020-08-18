@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Family module for Wikidata."""
 #
-# (C) Pywikibot team, 2012-2017
+# (C) Pywikibot team, 2012-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot import config
 from pywikibot import family
 
@@ -17,33 +15,30 @@ class Family(family.WikimediaFamily):
     """Family class for Wikidata."""
 
     name = 'wikidata'
-    test_codes = ('test', )
 
-    def __init__(self):
-        """Constructor."""
-        super(Family, self).__init__()
-        self.langs = {
-            'wikidata': 'www.wikidata.org',
-            'test': 'test.wikidata.org',
-        }
+    langs = {
+        'wikidata': 'www.wikidata.org',
+        'test': 'test.wikidata.org',
+        'beta': 'wikidata.beta.wmflabs.org',
+    }
 
-        self.interwiki_forward = 'wikipedia'
+    interwiki_forward = 'wikipedia'
 
-        self.category_redirect_templates = {
-            'wikidata': (
-                'Category redirect',
-            ),
-        }
+    category_redirect_templates = {
+        'wikidata': (
+            'Category redirect',
+        ),
+    }
 
-        # Subpages for documentation.
-        self.doc_subpages = {
-            '_default': ((u'/doc', ), ['wikidata']),
-        }
+    # Subpages for documentation.
+    doc_subpages = {
+        '_default': (('/doc', ), ['wikidata']),
+    }
 
-        # Disable cosmetic changes
-        config.cosmetic_changes_disable.update({
-            'wikidata': ('wikidata', 'test')
-        })
+    # Disable cosmetic changes
+    config.cosmetic_changes_disable.update({
+        'wikidata': ('wikidata', 'test', 'beta')
+    })
 
     def interface(self, code):
         """Return 'DataSite'."""
@@ -53,16 +48,6 @@ class Family(family.WikimediaFamily):
         """Default calendar model for WbTime datatype."""
         return 'http://www.wikidata.org/entity/Q1985727'
 
-    def shared_geo_shape_repository(self, code):
-        """Return Wikimedia Commons as the repository for geo-shapes."""
-        # Per geoShapeStorageFrontendUrl settings in Wikibase
-        return ('commons', 'commons')
-
-    def shared_tabular_data_repository(self, code):
-        """Return Wikimedia Commons as the repository for tabular-datas."""
-        # Per tabularDataStorageFrontendUrl settings in Wikibase
-        return ('commons', 'commons')
-
     def default_globe(self, code):
         """Default globe for Coordinate datatype."""
         return 'earth'
@@ -71,6 +56,7 @@ class Family(family.WikimediaFamily):
         """Supported globes for Coordinate datatype."""
         return {
             'ariel': 'http://www.wikidata.org/entity/Q3343',
+            'bennu': 'http://www.wikidata.org/entity/Q11558',
             'callisto': 'http://www.wikidata.org/entity/Q3134',
             'ceres': 'http://www.wikidata.org/entity/Q596',
             'deimos': 'http://www.wikidata.org/entity/Q7548',
@@ -96,6 +82,7 @@ class Family(family.WikimediaFamily):
             'phoebe': 'http://www.wikidata.org/entity/Q17975',
             'pluto': 'http://www.wikidata.org/entity/Q339',
             'rhea': 'http://www.wikidata.org/entity/Q15050',
+            'ryugu': 'http://www.wikidata.org/entity/Q1385178',
             'steins': 'http://www.wikidata.org/entity/Q150249',
             'tethys': 'http://www.wikidata.org/entity/Q15047',
             'titan': 'http://www.wikidata.org/entity/Q2565',

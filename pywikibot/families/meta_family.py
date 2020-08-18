@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Family module for Meta Wiki."""
 #
-# (C) Pywikibot team, 2005-2016
+# (C) Pywikibot team, 2005-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot import family
 
 
@@ -17,20 +15,16 @@ class Family(family.WikimediaOrgFamily):
 
     name = 'meta'
 
-    def __init__(self):
-        """Constructor."""
-        super(Family, self).__init__()
+    interwiki_forward = 'wikipedia'
+    cross_allowed = ['meta', ]
 
-        self.interwiki_forward = 'wikipedia'
-        self.cross_allowed = ['meta', ]
+    category_redirect_templates = {
+        'meta': (
+            'Category redirect',
+        ),
+    }
 
-        self.category_redirect_templates = {
-            'meta': (
-                'Category redirect',
-            ),
-        }
-
-        # Subpages for documentation.
-        self.doc_subpages = {
-            '_default': (('/doc',), ['meta']),
-        }
+    # Subpages for documentation.
+    doc_subpages = {
+        '_default': (('/doc',), ['meta']),
+    }

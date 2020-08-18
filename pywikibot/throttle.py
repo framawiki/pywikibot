@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Mechanics to slow down wiki read and/or write rate."""
 #
-# (C) Pywikibot team, 2008-2017
+# (C) Pywikibot team, 2008-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import math
 import threading
@@ -13,8 +13,9 @@ import time
 
 import pywikibot
 from pywikibot import config
+from pywikibot.tools import deprecated
 
-_logger = "wiki.throttle"
+_logger = 'wiki.throttle'
 
 # global process identifier
 #
@@ -38,8 +39,10 @@ class Throttle(object):
 
     def __init__(self, site, mindelay=None, maxdelay=None, writedelay=None,
                  multiplydelay=True):
-        """Constructor."""
+        """Initializer."""
         self.lock = threading.RLock()
+        self.lock_write = threading.RLock()
+        self.lock_read = threading.RLock()
         self.mysite = str(site)
         self.ctrlfilename = config.datafilepath('throttle.ctrl')
         self.mindelay = mindelay
@@ -64,7 +67,7 @@ class Throttle(object):
         # Free the process id after this many seconds:
         self.releasepid = 1200
 
-        self.lastwait = 0.0
+        self.retry_after = 0  # set by http.request
         self.delay = 0
         self.checktime = 0
         self.multiplydelay = multiplydelay
@@ -72,11 +75,17 @@ class Throttle(object):
             self.checkMultiplicity()
         self.setDelays()
 
+    @property
+    @deprecated(since='20180423')
+    def lastwait(self):
+        """DEPRECATED property."""
+        return 0.0
+
     def checkMultiplicity(self):
         """Count running processes for site and set process_multiplicity."""
         global pid
         mysite = self.mysite
-        pywikibot.debug(u"Checking multiplicity: pid = %(pid)s" % globals(),
+        pywikibot.debug('Checking multiplicity: pid = %(pid)s' % globals(),
                         _logger)
         with self.lock:
             processes = []
@@ -124,7 +133,7 @@ class Throttle(object):
             try:
                 f = open(self.ctrlfilename, 'w')
                 for p in processes:
-                    f.write("%(pid)s %(time)s %(site)s\n" % p)
+                    f.write('%(pid)s %(time)s %(site)s\n' % p)
             except IOError:
                 pass
             else:
@@ -172,7 +181,10 @@ class Throttle(object):
         return thisdelay
 
     def waittime(self, write=False):
-        """Return waiting time in seconds if a query would be made right now."""
+        """Return waiting time in seconds.
+
+        The result is for a query that would be made right now.
+        """
         # Take the previous requestsize in account calculating the desired
         # delay this time
         thisdelay = self.getDelay(write=write)
@@ -197,27 +209,28 @@ class Throttle(object):
                 lines = f.readlines()
         except IOError:
             return
-        else:
-            now = time.time()
-            for line in lines:
-                try:
-                    line = line.split(' ')
-                    this_pid = int(line[0])
-                    ptime = int(line[1].split('.')[0])
-                    this_site = line[2].rstrip()
-                except (IndexError, ValueError):
-                    # Sometimes the file gets corrupted ignore that line
-                    continue
-                if now - ptime <= self.releasepid \
-                   and this_pid != pid:
-                    processes.append({'pid': this_pid,
-                                      'time': ptime,
-                                      'site': this_site})
+
+        now = time.time()
+        for line in lines:
+            try:
+                line = line.split(' ')
+                this_pid = int(line[0])
+                ptime = int(line[1].split('.')[0])
+                this_site = line[2].rstrip()
+            except (IndexError, ValueError):
+                # Sometimes the file gets corrupted ignore that line
+                continue
+            if now - ptime <= self.releasepid \
+               and this_pid != pid:
+                processes.append({'pid': this_pid,
+                                  'time': ptime,
+                                  'site': this_site})
+
         processes.sort(key=lambda p: p['pid'])
         try:
             with open(self.ctrlfilename, 'w') as f:
                 for p in processes:
-                    f.write("%(pid)s %(time)s %(site)s\n" % p)
+                    f.write('%(pid)s %(time)s %(site)s\n' % p)
         except IOError:
             return
 
@@ -230,9 +243,9 @@ class Throttle(object):
         if seconds <= 0:
             return
 
-        message = (u"Sleeping for %(seconds).1f seconds, %(now)s" % {
+        message = ('Sleeping for %(seconds).1f seconds, %(now)s' % {
             'seconds': seconds,
-            'now': time.strftime("%Y-%m-%d %H:%M:%S",
+            'now': time.strftime('%Y-%m-%d %H:%M:%S',
                                  time.localtime())
         })
         if seconds > config.noisysleep:
@@ -252,7 +265,8 @@ class Throttle(object):
         thread from writing to the same site until the wait expires.
 
         """
-        with self.lock:
+        lock = self.lock_write if write else self.lock_read
+        with lock:
             wait = self.waittime(write=write)
             # Calculate the multiplicity of the next delay based on how
             # big the request is that is being posted now.
@@ -268,18 +282,32 @@ class Throttle(object):
             else:
                 self.last_read = time.time()
 
-    def lag(self, lagtime):
+    def lag(self, lagtime=None):
         """Seize the throttle lock due to server lag.
 
-        This will prevent any thread from accessing this site.
+        Usually the self.retry-after value from response_header of the last
+        request if available which will be used for wait time. Otherwise
+        lagtime from api maxlag is used. If neither retry_after nor lagtime is
+        set, fallback to config.retry_wait.
 
+        If the lagtime is disproportionately high compared to retry-after
+        value, the wait time will be increased.
+
+        This method is used by api.request. It will prevent any thread from
+        accessing this site.
+
+        @param lagtime: The time to wait for the next request which is the
+            last maxlag time from api warning. This is only used as a fallback
+            if self.retry-after isn't set.
+        @type lagtime: float
         """
         started = time.time()
         with self.lock:
-            # start at 1/2 the current server lag time
-            # wait at least 5 seconds but not more than 120 seconds
-            delay = min(max(5, lagtime // 2), 120)
+            waittime = lagtime or config.retry_wait
+            if self.retry_after:
+                waittime = max(self.retry_after, waittime / 5)
+            # wait not more than retry_max seconds
+            delay = min(waittime, config.retry_max)
             # account for any time we waited while acquiring the lock
             wait = delay - (time.time() - started)
-
             self.wait(wait)

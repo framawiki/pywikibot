@@ -26,13 +26,10 @@ to show warnings about deprecated methods:
     python pwb.py compat2core <scriptname> -warnonly
 """
 #
-# (C) xqt, 2014-2017
-# (C) Pywikibot team, 2014-2017
+# (C) Pywikibot team, 2014-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import codecs
 import os
 import re
@@ -50,13 +47,12 @@ replacements = (
     ('import wikipedia(?: as pywikibot)?', 'import pywikibot'),
     ('(?<!from pywikibot )import (config|pagegenerators)',
      r'from pywikibot import \1'),
-    ('(?<!from pywikibot.compat )import query',
-     'from pywikibot.compat import query'),
     # remove deprecated libs
+    ('(?:from pywikibot.compat )?import query', ''),
     ('import catlib\r?\n', ''),
     ('import userlib\r?\n', ''),
     # change wikipedia to pywikibot, exclude URLs
-    (r'(?<!\.)wikipedia\.', u'pywikibot.'),
+    (r'(?<!\.)wikipedia\.', 'pywikibot.'),
     # site instance call
     (r'pywikibot\.getSite\s*\(\s*', 'pywikibot.Site('),
     # lang is different from code. We should use code in core
@@ -69,12 +65,12 @@ replacements = (
     # change ImagePage to FilePage
     (r'pywikibot\.ImagePage\s*\(\s*', 'pywikibot.FilePage('),
     # deprecated title methods
-    (r'\.urlname\s*\(\s*\)', '.title(asUrl=True)'),
+    (r'\.urlname\s*\(\s*\)', '.title(as_url=True)'),
     (r'\.urlname\s*\(\s*(?:withNamespace\s*=\s*)?(True|False)+\s*\)',
-     r'.title(asUrl=True, withNamespace=\1)'),
-    (r'\.titleWithoutNamespace\s*\(\s*\)', '.title(withNamespace=False)'),
-    (r'\.sectionFreeTitle\s*\(\s*\)', '.title(withSection=False)'),
-    (r'\.aslink\s*\(\s*\)', '.title(asLink=True)'),
+     r'.title(as_url=True, with_ns=\1)'),
+    (r'\.titleWithoutNamespace\s*\(\s*\)', '.title(with_ns=False)'),
+    (r'\.sectionFreeTitle\s*\(\s*\)', '.title(with_section=False)'),
+    (r'\.aslink\s*\(\s*\)', '.title(as_link=True)'),
     # other deprecated methods
     (r'(?<!site)\.encoding\s*\(\s*\)', '.site.encoding()'),
     (r'\.newimages\s*\(\)', ".logevents(logtype='upload')"),
@@ -93,14 +89,18 @@ replacements = (
 warnings = (
     ('pywikibot.setAction(',
      'setAction() no longer works; you must pass an explicit edit summary\n'
-     'message to put() or put_async()'),
+     'message to save() or put()'),
     ('.removeImage(',
      'Page.removeImage() is deprecated and does not work at core'),
     ('.replaceImage(',
      'Page.replaceImage() is deprecated and does not work at core'),
     ('.getVersionHistory(',
-     'Page.getVersionHistory() returns a pywikibot.Timestamp object instead of\n'
-     'a MediaWiki one'),
+     'Page.getVersionHistory() returns a pywikibot.Timestamp object instead\n'
+     'of a MediaWiki one. It also returns a tuple of 4 items instead of 6:\n'
+     'size and tags items are missing. Use Page.revisions() instead.'),
+    ('.fullVersionHistory(',
+     'Page.fullVersionHistory() has different behaviour in core\n'
+     'use Page.revisions() instead.'),
     ('.contributions(',
      'User.contributions() returns a pywikibot.Timestamp object instead of a\n'
      'MediaWiki one'),
@@ -112,24 +112,34 @@ warnings = (
     ('from wikipedia import',
      '"wikipedia" library has been changed to "pywikibot". Please find the\n'
      'right way to import your object.'),
+    ('from pywikibot.compat import',
+     'compat module has been removed. Please refer README-conversion.txt for\n'
+     'core implementation.'),
     ('query.GetData(',
      'query.GetData() should be replaced by pywikibot.data.api.Request or\n'
      'by a direct site request'),
     ('.verbose',
      'verbose_output need "from pywikibot import config" first'),
+    ('templates(',
+     'returns a list of templage page objects, not a list of template titles.'
+     '\nPlease refer README-conversion.txt and the documentation.'),
     ('templatesWithParams(',
      'the first item of each template info is a Page object of the template,\n'
      'not the title. '
      'Please refer README-conversion.txt and the documentation.'),
+    ('linkedPages(',
+     'returns a PageGenerator of page objects of link targets, not a list\n'
+     'of link target strings. Please refer README-conversion.txt\n'
+     'and the documentation.'),
 )
 
 
-class ConvertBot(object):
+class ConvertBot:
 
     """Script conversion bot."""
 
     def __init__(self, filename=None, warnonly=False):
-        """Constructor."""
+        """Initializer."""
         self.source = filename
         self.warnonly = warnonly
 
@@ -150,21 +160,22 @@ class ConvertBot(object):
                     '(no input to leave):')
             if not self.source:
                 exit()
-            if not self.source.endswith(u'.py'):
+            if not self.source.endswith('.py'):
                 self.source += '.py'
             if os.path.exists(self.source):
                 break
             self.source = os.path.join('scripts', self.source)
             if os.path.exists(self.source):
                 break
-            pywikibot.output(u'%s does not exist. Please retry.' % self.source)
+            pywikibot.output('{} does not exist. Please retry.'
+                             .format(self.source))
             self.source = None
 
     def get_dest(self):
         """Ask for destination script name."""
-        self.dest = u'%s-core.%s' % tuple(self.source.rsplit(u'.', 1))
+        self.dest = '%s-core.%s' % tuple(self.source.rsplit('.', 1))
         if not self.warnonly and not pywikibot.input_yn(
-                u'Destination file is %s.' % self.dest,
+                'Destination file is {}.'.format(self.dest),
                 default=True, automatic_quit=False):
             pywikibot.output('Quitting...')
             exit()
@@ -196,7 +207,7 @@ def main():
     warnonly = False
 
     # Parse command line arguments for -help option
-    for arg in pywikibot.handleArgs():
+    for arg in pywikibot.handle_args():
         if arg.startswith('-warnonly'):
             warnonly = True
         elif not arg.startswith('-'):
@@ -207,6 +218,6 @@ def main():
     bot.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     pywikibot.stopme()  # we do not work on any site
     main()

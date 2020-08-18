@@ -1,56 +1,64 @@
 # -*- coding: utf-8 -*-
 """Objects representing Mediawiki log entries."""
 #
-# (C) Pywikibot team, 2007-2017
+# (C) Pywikibot team, 2007-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
-import sys
+from collections import UserDict
 
 import pywikibot
-from pywikibot.exceptions import Error
+from pywikibot.exceptions import Error, HiddenKeyError
 from pywikibot.tools import deprecated, classproperty
 
-if sys.version_info[0] > 2:
-    basestring = (str, )
-
-_logger = "wiki"
+_logger = 'wiki'
 
 
-class LogDict(dict):
+class LogEntry(UserDict):
 
+    """Generic log entry.
+
+    LogEntry parameters may be retrieved by the corresponding method
+    or the LogEntry key. The following statements are equivalent:
+
+    action = logentry.action()
+    action = logentry['action']
+    action = logentry.data['action']
     """
-    Simple custom dict that raises a custom KeyError when a key is missing.
-
-    It also logs debugging information when a key is missing.
-    """
-
-    def __missing__(self, key):
-        """Debug when the key is missing."""
-        pywikibot.debug(u"API log entry received:\n" + repr(self),
-                        _logger)
-        raise KeyError("Log entry (%s) has no '%s' key" % (self._type, key))
-
-
-class LogEntry(object):
-
-    """Generic log entry."""
 
     # Log type expected. None for every type, or one of the (letype) str :
     # block/patrol/etc...
     # Overridden in subclasses.
-    _expectedType = None
+    _expected_type = None
 
     def __init__(self, apidata, site):
         """Initialize object from a logevent dict returned by MW API."""
-        self.data = LogDict(apidata)
+        super(LogEntry, self).__init__(apidata)
         self.site = site
-        if self._expectedType is not None and self._expectedType != self.type():
-            raise Error("Wrong log type! Expecting %s, received %s instead."
-                        % (self._expectedType, self.type()))
-        self.data._type = self.type()
+        expected_type = self._expected_type
+        if expected_type is not None and expected_type != self.type():
+            raise Error('Wrong log type! Expecting %s, received %s instead.'
+                        % (expected_type, self.type()))
+
+    def __missing__(self, key):
+        """Debug when the key is missing.
+
+        HiddenKeyError is raised when the user does not have permission.
+        KeyError is raised otherwise.
+
+        It also logs debugging information when a key is missing.
+        """
+        pywikibot.debug('API log entry received:\n' + repr(self),
+                        _logger)
+        hidden = {'action', 'logpage', 'ns', 'pageid', 'params', 'title'}
+        if ((key in hidden and 'actionhidden' in self)
+            or (key == 'comment' and 'commenthidden' in self)
+                or (key == 'user' and 'userhidden' in self)):
+            raise HiddenKeyError(
+                "Log entry ({}) has a hidden '{}' key and you don't have "
+                'permission to view it.'.format(self['type'], key))
+        raise KeyError("Log entry ({}) has no '{}' key"
+                       .format(self['type'], key))
 
     def __repr__(self):
         """Return a string representation of LogEntry object."""
@@ -70,9 +78,13 @@ class LogEntry(object):
             return False
         return self.logid() == other.logid() and self.site == other.site
 
-    def __ne__(self, other):
-        """Compare if self is not equal to other."""
-        return not self == other
+    def __getattr__(self, item):
+        """Return several items from dict used as methods."""
+        if item in ('action', 'comment', 'logid', 'ns', 'pageid', 'type',
+                    'user'):  # TODO use specific User class for 'user'?
+            return lambda: self[item]
+
+        return super(LogEntry, self).__getattribute__(item)
 
     @property
     def _params(self):
@@ -81,24 +93,12 @@ class LogEntry(object):
 
         @rtype: dict or None
         """
-        if 'params' in self.data:
-            return self.data['params']
+        if 'params' in self:
+            return self['params']
         else:  # try old mw style preceding mw 1.19
-            return self.data[self._expectedType]
+            return self[self._expected_type]
 
-    def logid(self):
-        """Return the id of the log entry."""
-        return self.data['logid']
-
-    def pageid(self):
-        """Return the log id of the page handled by this log entry."""
-        return self.data['pageid']
-
-    def ns(self):
-        """Return the namespace id of the page handled by this log entry."""
-        return self.data['ns']
-
-    @deprecated('page()')
+    @deprecated('page()', since='20150617')
     def title(self):
         """
         DEPRECATED: Alias for page().
@@ -112,39 +112,26 @@ class LogEntry(object):
         """
         Page on which action was performed.
 
-        @note: title may be missing in data dict e.g. by oversight action to
-               hide the title. In that case a KeyError exception will raise
-
+        @return: page on action was performed
         @rtype: pywikibot.Page
-        @raise: KeyError: title was missing from log entry
         """
         if not hasattr(self, '_page'):
-            self._page = pywikibot.Page(self.site, self.data['title'])
+            self._page = pywikibot.Page(self.site, self['title'])
         return self._page
-
-    def type(self):
-        """The type of thie logentry."""
-        return self.data['type']
-
-    def action(self):
-        """The action of this log entry."""
-        return self.data['action']
-
-    def user(self):
-        """Return the user name doing this action."""
-        # TODO use specific User class ?
-        return self.data['user']
 
     def timestamp(self):
         """Timestamp object corresponding to event timestamp."""
         if not hasattr(self, '_timestamp'):
             self._timestamp = pywikibot.Timestamp.fromISOformat(
-                self.data['timestamp'])
+                self['timestamp'])
         return self._timestamp
 
-    def comment(self):
-        """Return the logentry's comment."""
-        return self.data['comment']
+
+class OtherLogEntry(LogEntry):
+
+    """A log entry class for unspecified log events."""
+
+    pass
 
 
 class UserTargetLogEntry(LogEntry):
@@ -161,7 +148,7 @@ class UserTargetLogEntry(LogEntry):
         @rtype: pywikibot.User
         """
         if not hasattr(self, '_page'):
-            self._page = pywikibot.User(super(UserTargetLogEntry, self).page())
+            self._page = pywikibot.User(self.site, self['title'])
         return self._page
 
 
@@ -174,17 +161,17 @@ class BlockEntry(LogEntry):
     expiry and flags are not available on unblock log entries.
     """
 
-    _expectedType = 'block'
+    _expected_type = 'block'
 
     def __init__(self, apidata, site):
-        """Constructor."""
+        """Initializer."""
         super(BlockEntry, self).__init__(apidata, site)
         # When an autoblock is removed, the "title" field is not a page title
         # See bug T19781
-        pos = self.data['title'].find('#')
+        pos = self['title'].find('#')
         self.isAutoblockRemoval = pos > 0
         if self.isAutoblockRemoval:
-            self._blockid = int(self.data['title'][pos + 1:])
+            self._blockid = int(self['title'][pos + 1:])
 
     def page(self):
         """
@@ -207,14 +194,15 @@ class BlockEntry(LogEntry):
 
         It raises an Error if the entry is an unblocking log entry.
 
-        @rtype: list of flag strings
+        @return: list of flags strings
+        @rtype: list
         """
         if self.action() == 'unblock':
             return []
         if not hasattr(self, '_flags'):
             self._flags = self._params['flags']
             # pre mw 1.19 returned a delimited string.
-            if isinstance(self._flags, basestring):
+            if isinstance(self._flags, str):
                 if self._flags:
                     self._flags = self._flags.split(',')
                 else:
@@ -250,59 +238,43 @@ class BlockEntry(LogEntry):
         return self._expiry
 
 
-class ProtectEntry(LogEntry):
-
-    """Protection log entry."""
-
-    _expectedType = 'protect'
-
-
 class RightsEntry(LogEntry):
 
     """Rights log entry."""
 
-    _expectedType = 'rights'
+    _expected_type = 'rights'
 
     @property
     def oldgroups(self):
         """Return old rights groups."""
-        if 'old' in self._params:  # old mw style
-            return self._params['old'].split(',') if self._params['old'] else []
-        return self._params['oldgroups']
+        params = self._params
+        if 'old' in params:  # old mw style
+            return params['old'].split(',') if params['old'] else []
+        return params['oldgroups']
 
     @property
     def newgroups(self):
         """Return new rights groups."""
-        if 'new' in self._params:  # old mw style
-            return self._params['new'].split(',') if self._params['new'] else []
-        return self._params['newgroups']
-
-
-class DeleteEntry(LogEntry):
-
-    """Deletion log entry."""
-
-    _expectedType = 'delete'
+        params = self._params
+        if 'new' in params:  # old mw style
+            return params['new'].split(',') if params['new'] else []
+        return params['newgroups']
 
 
 class UploadEntry(LogEntry):
 
     """Upload log entry."""
 
-    _expectedType = 'upload'
+    _expected_type = 'upload'
 
     def page(self):
         """
         Return FilePage on which action was performed.
 
-        Note: title may be missing in data dict e.g. by oversight action to
-              hide the title. In that case a KeyError exception will raise
-
         @rtype: pywikibot.FilePage
-        @raise: KeyError: title was missing from log entry
         """
         if not hasattr(self, '_page'):
-            self._page = pywikibot.FilePage(self.site, self.data['title'])
+            self._page = pywikibot.FilePage(self.site, self['title'])
         return self._page
 
 
@@ -310,9 +282,9 @@ class MoveEntry(LogEntry):
 
     """Move log entry."""
 
-    _expectedType = 'move'
+    _expected_type = 'move'
 
-    @deprecated('target_ns.id')
+    @deprecated('target_ns.id', since='20150518')
     def new_ns(self):
         """Return namespace id of target page."""
         return self.target_ns.id
@@ -325,7 +297,7 @@ class MoveEntry(LogEntry):
                                     if 'target_ns' in self._params
                                     else self._params['new_ns']]
 
-    @deprecated('target_page')
+    @deprecated('target_page', since='20150518')
     def new_title(self):
         """Return page object of the new title."""
         return self.target_page
@@ -340,7 +312,11 @@ class MoveEntry(LogEntry):
 
     @property
     def target_page(self):
-        """Return target page object."""
+        """
+        Return target page object.
+
+        @rtype: pywikibot.Page
+        """
         if not hasattr(self, '_target_page'):
             self._target_page = pywikibot.Page(self.site, self.target_title)
         return self._target_page
@@ -355,22 +331,19 @@ class MoveEntry(LogEntry):
         return 'suppressedredirect' in self._params
 
 
-class ImportEntry(LogEntry):
-
-    """Import log entry."""
-
-    _expectedType = 'import'
-
-
 class PatrolEntry(LogEntry):
 
     """Patrol log entry."""
 
-    _expectedType = 'patrol'
+    _expected_type = 'patrol'
 
     @property
     def current_id(self):
-        """Return the current id."""
+        """
+        Return the current id.
+
+        @rtype: int
+        """
         # key has been changed in mw 1.19; try the new mw style first
         # sometimes it returns strs sometimes ints
         return int(self._params['curid']
@@ -378,7 +351,11 @@ class PatrolEntry(LogEntry):
 
     @property
     def previous_id(self):
-        """Return the previous id."""
+        """
+        Return the previous id.
+
+        @rtype: int
+        """
         # key has been changed in mw 1.19; try the new mw style first
         # sometimes it returns strs sometimes ints
         return int(self._params['previd']
@@ -390,22 +367,6 @@ class PatrolEntry(LogEntry):
         return 'auto' in self._params and self._params['auto'] != 0
 
 
-class NewUsersEntry(LogEntry):
-
-    """New user log entry."""
-
-    _expectedType = 'newusers'
-
-
-class ThanksEntry(UserTargetLogEntry):
-
-    """Thanks log entry."""
-
-    _expectedType = 'thanks'
-
-# TODO entries for merge,suppress,makebot,gblblock,renameuser,globalauth,gblrights ?
-
-
 class LogEntryFactory(object):
 
     """
@@ -414,22 +375,17 @@ class LogEntryFactory(object):
     Only available method is create()
     """
 
-    logtypes = {
+    _logtypes = {
         'block': BlockEntry,
-        'protect': ProtectEntry,
         'rights': RightsEntry,
-        'delete': DeleteEntry,
         'upload': UploadEntry,
         'move': MoveEntry,
-        'import': ImportEntry,
         'patrol': PatrolEntry,
-        'newusers': NewUsersEntry,
-        'thanks': ThanksEntry,
     }
 
     def __init__(self, site, logtype=None):
         """
-        Constructor.
+        Initializer.
 
         @param site: The site on which the log entries are created.
         @type site: BaseSite
@@ -444,14 +400,15 @@ class LogEntryFactory(object):
         else:
             # Bind a Class object to self._creator:
             # When called, it will initialize a new object of that class
-            logclass = LogEntryFactory._getEntryClass(logtype)
+            logclass = self.get_valid_entry_class(logtype)
             self._creator = lambda data: logclass(data, self._site)
 
     @classproperty
-    @deprecated('LogEntryFactory.logtypes')
-    def _logtypes(cls):  # noqa: N805
+    @deprecated('Site.logtypes or LogEntryFactory.get_entry_class(logtype)',
+                since='20160918')
+    def logtypes(cls):
         """DEPRECATED LogEntryFactory class attribute of log types."""
-        return cls.logtypes
+        return cls._logtypes
 
     def create(self, logdata):
         """
@@ -464,20 +421,40 @@ class LogEntryFactory(object):
         """
         return self._creator(logdata)
 
-    @classmethod
-    def _getEntryClass(cls, logtype):
+    def get_valid_entry_class(self, logtype):
         """
         Return the class corresponding to the @logtype string parameter.
 
-        @return: specified subclass of LogEntry, or LogEntry
-        @rtype: class
+        @return: specified subclass of LogEntry
+        @rtype: LogEntry
+        @raise KeyError: logtype is not valid
         """
-        try:
-            return cls.logtypes[logtype]
-        except KeyError:
-            pywikibot.warning(
-                'Log entry key {0} is not known.'.format(logtype))
-            return LogEntry
+        if logtype not in self._site.logtypes:
+            raise KeyError('{} is not a valid logtype'.format(logtype))
+        return LogEntryFactory.get_entry_class(logtype)
+
+    @classmethod
+    def get_entry_class(cls, logtype):
+        """
+        Return the class corresponding to the @logtype string parameter.
+
+        @return: specified subclass of LogEntry
+        @rtype: LogEntry
+        @note: this class method cannot verify whether the given logtype
+            already exits for a given site; to verify use Site.logtypes
+            or use the get_valid_entry_class instance method instead.
+        """
+        if logtype not in cls._logtypes:
+            if logtype in ('newusers', 'thanks'):
+                bases = (UserTargetLogEntry, OtherLogEntry)
+            else:
+                bases = (OtherLogEntry, )
+            classname = str(logtype.capitalize() + 'Entry'
+                            if logtype is not None
+                            else OtherLogEntry.__name__)
+            cls._logtypes[logtype] = type(
+                classname, bases, {'_expected_type': logtype})
+        return cls._logtypes[logtype]
 
     def _createFromData(self, logdata):
         """
@@ -493,4 +470,12 @@ class LogEntryFactory(object):
             pywikibot.debug('API log entry received:\n{0}'.format(logdata),
                             _logger)
             raise Error("Log entry has no 'type' key")
-        return LogEntryFactory._getEntryClass(logtype)(logdata, self._site)
+        return LogEntryFactory.get_entry_class(logtype)(logdata, self._site)
+
+
+# For backward compatibility
+ProtectEntry = LogEntryFactory.get_entry_class('protect')
+DeleteEntry = LogEntryFactory.get_entry_class('delete')
+ImportEntry = LogEntryFactory.get_entry_class('import')
+NewUsersEntry = LogEntryFactory.get_entry_class('newusers')
+ThanksEntry = LogEntryFactory.get_entry_class('thanks')

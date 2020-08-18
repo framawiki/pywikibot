@@ -35,19 +35,19 @@ Furthermore, the following command line parameters are supported:
 
 -noreorder        Avoid to reorder cats and interwiki
 
---- Example ---
-1.
-# This is a script to add a template to the top of the pages with
-# category:catname
-# Warning! Put it in one line, otherwise it won't work correctly.
+Example
+-------
+
+1. This is a script to add a template to the top of the pages with
+category:catname
+Warning! Put it in one line, otherwise it won't work correctly:
 
     python pwb.py add_text -cat:catname -summary:"Bot: Adding a template" \
         -text:"{{Something}}" -except:"\{\{([Tt]emplate:|)[Ss]omething" -up
 
-2.
-# Command used on it.wikipedia to put the template in the page without any
-# category.
-# Warning! Put it in one line, otherwise it won't work correctly.
+2. Command used on it.wikipedia to put the template in the page without any
+category.
+Warning! Put it in one line, otherwise it won't work correctly:
 
     python pwb.py add_text -except:"\{\{([Tt]emplate:|)[Cc]ategorizzare" \
         -text:"{{Categorizzare}}" -excepturl:"class='catlinks'>" -uncat \
@@ -55,17 +55,15 @@ Furthermore, the following command line parameters are supported:
 """
 
 #
-# (C) Filnik, 2007-2010
-# (C) Pywikibot team, 2007-2017
+# (C) Pywikibot team, 2007-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import codecs
 import re
 import sys
-import time
+
+from typing import Optional, Tuple, Union
 
 import pywikibot
 
@@ -73,44 +71,131 @@ from pywikibot import config, i18n, pagegenerators, textlib
 from pywikibot.bot_choice import QuitKeyboardInterrupt
 from pywikibot.tools.formatter import color_format
 
-docuReplacements = {
-    '&params;': pagegenerators.parameterHelp,
-}
+docuReplacements = {'&params;': pagegenerators.parameterHelp}  # noqa: N816
+
+
+def get_text(page, old, create) -> str:
+    """
+    Get text on page. If old is not None, return old.
+
+    @param page: The page to get text from
+    @type page: pywikibot.page.BasePage
+    @param old: If not None, this parameter is returned instead
+        of fetching text from the page
+    @type old: str
+    @param create: Create the page if it doesn't exist
+    @type create: bool
+    @return: The page's text or old parameter if not None
+    """
+    if old is None:
+        try:
+            text = page.get()
+        except pywikibot.NoPage:
+            if create:
+                pywikibot.output(
+                    "{} doesn't exist, creating it!".format(page.title()))
+                text = ''
+            else:
+                pywikibot.output(
+                    "{} doesn't exist, skip!".format(page.title()))
+                return None
+        except pywikibot.IsRedirectPage:
+            pywikibot.output('{} is a redirect, skip!'.format(page.title()))
+            return None
+    else:
+        text = old
+    return text
+
+
+def put_text(page, new, summary, count, asynchronous=False) -> Optional[bool]:
+    """
+    Save the new text.
+
+    @param page: The page to update and save
+    @type page: pywikibot.page.BasePage
+    @param new: The new text for the page
+    @type new: str
+    @param summary: Summary of page changes.
+    @type summary: str
+    @param count: Maximum num attempts to reach the server
+    @type count: int
+    @param asynchronous: Save the page asynchronously
+    @type asynchronous: bool
+    @return: True if successful, False if unsuccessful, None if
+        waiting for server
+    """
+    page.text = new
+    try:
+        page.save(summary=summary, asynchronous=asynchronous,
+                  minor=page.namespace() != 3)
+    except pywikibot.EditConflict:
+        pywikibot.output('Edit conflict! skip!')
+    except pywikibot.ServerError:
+        if count <= config.max_retries:
+            pywikibot.output('Server Error! Wait..')
+            pywikibot.sleep(config.retry_wait)
+            return None
+        else:
+            raise pywikibot.ServerError(
+                'Server Error! Maximum retries exceeded')
+    except pywikibot.SpamblacklistError as e:
+        pywikibot.output(
+            'Cannot change {} because of blacklist entry {}'
+            .format(page.title(), e.url))
+    except pywikibot.LockedPage:
+        pywikibot.output('Skipping {} (locked page)'.format(page.title()))
+    except pywikibot.PageNotSaved as error:
+        pywikibot.output('Error putting page: {}'.format(error.args))
+    else:
+        return True
+    return False
 
 
 def add_text(page, addText, summary=None, regexSkip=None,
              regexSkipUrl=None, always=False, up=False, putText=True,
-             oldTextGiven=None, reorderEnabled=True, create=False):
+             oldTextGiven=None, reorderEnabled=True, create=False
+             ) -> Union[Tuple[bool, bool, bool], Tuple[str, str, bool]]:
     """
     Add text to a page.
 
-    @rtype: tuple of (text, newtext, always)
+    @param page: The page to add text to
+    @type page: pywikibot.page.BasePage
+    @param addText: Text to add
+    @type addText: str
+    @param summary: Summary of changes. If None, beginning of addText is used.
+    @type summary: str
+    @param regexSkip: Abort if text on page matches
+    @type regexSkip: str
+    @param regexSkipUrl: Abort if full url matches
+    @type regexSkipUrl: str
+    @param always: Always add text without user confirmation
+    @type always: bool
+    @param up: If True, add text to top of page, else add at bottom.
+    @type up: bool
+    @param putText: If True, save changes to the page, else return
+        (text, newtext, always)
+    @type putText: bool
+    @param oldTextGiven: If None fetch page text, else use this text
+    @type oldTextGiven: str
+    @param reorderEnabled: If True place text above categories and
+        interwiki, else place at page bottom. No effect if up = False.
+    @type reorderEnabled: bool
+    @param create: Create page if it does not exist
+    @type create: bool
+    @return: If putText=True: (success, success, always)
+        else: (text, newtext, always)
     """
     site = page.site
     if not summary:
         summary = i18n.twtranslate(site, 'add_text-adding',
                                    {'adding': addText[:200]})
-
-    errorCount = 0
-
     if putText:
-        pywikibot.output(u'Loading %s...' % page.title())
-    if oldTextGiven is None:
-        try:
-            text = page.get()
-        except pywikibot.NoPage:
-            if create:
-                pywikibot.output(u"%s doesn't exist, creating it!"
-                                 % page.title())
-                text = u''
-            else:
-                pywikibot.output(u"%s doesn't exist, skip!" % page.title())
-                return (False, False, always)
-        except pywikibot.IsRedirectPage:
-            pywikibot.output(u"%s is a redirect, skip!" % page.title())
-            return (False, False, always)
-    else:
-        text = oldTextGiven
+        pywikibot.output('Loading {}...'.format(page.title()))
+
+    text = get_text(page, oldTextGiven, create)
+    if text is None:
+        return (False, False, always)
+
     # Understand if the bot has to skip the page or not
     # In this way you can use both -except and -excepturl
     if regexSkipUrl is not None:
@@ -120,7 +205,7 @@ def add_text(page, addText, summary=None, regexSkip=None,
             pywikibot.output(
                 'Exception! regex (or word) used with -exceptUrl '
                 'is in the page. Skip!\n'
-                'Match was: %s' % result)
+                'Match was: {}'.format(result))
             return (False, False, always)
     if regexSkip is not None:
         result = re.findall(regexSkip, text)
@@ -128,14 +213,14 @@ def add_text(page, addText, summary=None, regexSkip=None,
             pywikibot.output(
                 'Exception! regex (or word) used with -except '
                 'is in the page. Skip!\n'
-                'Match was: %s' % result)
+                'Match was: {}'.format(result))
             return (False, False, always)
     # If not up, text put below
     if not up:
         newtext = text
         # Translating the \\n into binary \n
-        addText = addText.replace('\\n', config.line_separator)
-        if (reorderEnabled):
+        addText = addText.replace('\\n', '\n')
+        if reorderEnabled:
             # Getting the categories
             categoriesInside = textlib.getCategoryLinks(newtext, site)
             # Deleting the categories
@@ -146,7 +231,7 @@ def add_text(page, addText, summary=None, regexSkip=None,
             newtext = textlib.removeLanguageLinks(newtext, site)
 
             # Adding the text
-            newtext += u"%s%s" % (config.line_separator, addText)
+            newtext += '\n' + addText
             # Reputting the categories
             newtext = textlib.replaceCategoryLinks(newtext,
                                                    categoriesInside, site,
@@ -155,81 +240,57 @@ def add_text(page, addText, summary=None, regexSkip=None,
             newtext = textlib.replaceLanguageLinks(newtext, interwikiInside,
                                                    site)
         else:
-            newtext += u"%s%s" % (config.line_separator, addText)
+            newtext += '\n' + addText
     else:
-        newtext = addText + config.line_separator + text
+        newtext = addText + '\n' + text
+
     if putText and text != newtext:
         pywikibot.output(color_format(
             '\n\n>>> {lightpurple}{0}{default} <<<', page.title()))
         pywikibot.showDiff(text, newtext)
+
     # Let's put the changes.
+    error_count = 0
     while True:
         # If someone load it as module, maybe it's not so useful to put the
         # text in the page
-        if putText:
-            if not always:
-                try:
-                    choice = pywikibot.input_choice(
-                        'Do you want to accept these changes?',
-                        [('Yes', 'y'), ('No', 'n'), ('All', 'a'),
-                         ('open in Browser', 'b')], 'n')
-                except QuitKeyboardInterrupt:
-                    sys.exit('User quit bot run.')
-                if choice == 'a':
-                    always = True
-                elif choice == 'n':
-                    return (False, False, always)
-                elif choice == 'b':
-                    pywikibot.bot.open_webbrowser(page)
-            if always or choice == 'y':
-                try:
-                    if always:
-                        page.put(newtext, summary,
-                                 minorEdit=page.namespace() != 3)
-                    else:
-                        page.put_async(newtext, summary,
-                                       minorEdit=page.namespace() != 3)
-                except pywikibot.EditConflict:
-                    pywikibot.output(u'Edit conflict! skip!')
-                    return (False, False, always)
-                except pywikibot.ServerError:
-                    errorCount += 1
-                    if errorCount < config.max_retries:
-                        pywikibot.output(u'Server Error! Wait..')
-                        time.sleep(config.retry_wait)
-                        continue
-                    else:
-                        raise pywikibot.ServerError(u'Fifth Server Error!')
-                except pywikibot.SpamfilterError as e:
-                    pywikibot.output(
-                        u'Cannot change %s because of blacklist entry %s'
-                        % (page.title(), e.url))
-                    return (False, False, always)
-                except pywikibot.LockedPage:
-                    pywikibot.output(u'Skipping %s (locked page)'
-                                     % page.title())
-                    return (False, False, always)
-                except pywikibot.PageNotSaved as error:
-                    pywikibot.output(u'Error putting page: %s' % error.args)
-                    return (False, False, always)
-                else:
-                    # Break only if the errors are one after the other...
-                    errorCount = 0
-                    return (True, True, always)
-        else:
+        if not putText:
             return (text, newtext, always)
 
+        if not always:
+            try:
+                choice = pywikibot.input_choice(
+                    'Do you want to accept these changes?',
+                    [('Yes', 'y'), ('No', 'n'), ('All', 'a'),
+                     ('open in Browser', 'b')], 'n')
+            except QuitKeyboardInterrupt:
+                sys.exit('User quit bot run.')
 
-def main(*args):
+            if choice == 'a':
+                always = True
+            elif choice == 'n':
+                return (False, False, always)
+            elif choice == 'b':
+                pywikibot.bot.open_webbrowser(page)
+
+        if always or choice == 'y':
+            result = put_text(page, newtext, summary, error_count,
+                              asynchronous=not always)
+            if result is not None:
+                return (result, result, always)
+            error_count += 1
+
+
+def main(*args) -> None:
     """
     Process command line arguments and invoke bot.
 
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
-    # If none, the var is setted only for check purpose.
+    # If none, the var is set only for check purpose.
     summary = None
     addText = None
     regexSkip = None
@@ -275,13 +336,13 @@ def main(*args):
     if textfile and not addText:
         with codecs.open(textfile, 'r', config.textfile_encoding) as f:
             addText = f.read()
+
     generator = genFactory.getCombinedGenerator()
-    if not generator:
-        pywikibot.bot.suggest_help(missing_generator=True)
-        return False
-    if not addText:
-        pywikibot.error("The text to add wasn't given.")
+    additional_text = '' if addText else "The text to add wasn't given."
+    if pywikibot.bot.suggest_help(missing_generator=not generator,
+                                  additional_text=additional_text):
         return
+
     if talkPage:
         generator = pagegenerators.PageWithTalkPageGenerator(generator, True)
     for page in generator:
@@ -291,5 +352,5 @@ def main(*args):
                                            create=talkPage)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

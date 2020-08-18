@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Family module for Omega Wiki."""
 #
-# (C) Pywikibot team, 2006-2015
+# (C) Pywikibot team, 2006-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot import family
 
 
@@ -18,23 +16,10 @@ class Family(family.SingleSiteFamily):
     name = 'omegawiki'
     domain = 'www.omegawiki.org'
 
-    def __init__(self):
-        """Constructor."""
-        super(Family, self).__init__()
-
-        # On most Wikipedias page names must start with a capital letter, but some
-        # languages don't use this.
-
-        self.nocapitalize = list(self.langs.keys())
+    # On most Wikipedias page names must start with a capital letter, but some
+    # languages don't use this.
+    nocapitalize = ['omegawiki']
 
     def scriptpath(self, code):
         """Return the script path for this family."""
         return ''
-
-    def protocol(self, code):
-        """Return https as the protocol for this family."""
-        return "https"
-
-    def ignore_certificate_error(self, code):
-        """Ignore certificate errors."""
-        return True  # has an expired certificate.

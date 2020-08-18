@@ -20,21 +20,21 @@ it with tr(1) and upper case it again with tr(1)
 
 The following parameters are supported:
 
-&params;
-
     -always        Always commit changes without asking you to accept them
 
     -filter:       Filter the article text through this program, can be
                    given multiple times to filter through multiple programs in
                    the order which they are given
+
+The following generators and filters are supported:
+
+&params;
 """
 #
-# (C) Pywikibot team, 2008-2017
+# (C) Pywikibot team, 2008-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import os
 import pipes
 import tempfile
@@ -44,13 +44,10 @@ import pywikibot
 from pywikibot import pagegenerators
 from pywikibot.bot import (MultipleSitesBot, ExistingPageBot,
                            NoRedirectPageBot, AutomaticTWSummaryBot)
-from pywikibot.tools import UnicodeType
 
 # This is required for the text that is shown when you run this script
 # with the parameter -help.
-docuReplacements = {
-    '&params;': pagegenerators.parameterHelp
-}
+docuReplacements = {'&params;': pagegenerators.parameterHelp}  # noqa: N816
 
 
 class PiperBot(MultipleSitesBot, ExistingPageBot, NoRedirectPageBot,
@@ -62,7 +59,7 @@ class PiperBot(MultipleSitesBot, ExistingPageBot, NoRedirectPageBot,
 
     def __init__(self, generator, **kwargs):
         """
-        Constructor.
+        Initializer.
 
         @param generator: The page generator that determines on which pages
             to work on.
@@ -71,38 +68,34 @@ class PiperBot(MultipleSitesBot, ExistingPageBot, NoRedirectPageBot,
         self.availableOptions.update({
             'filters': [],
         })
-        super(PiperBot, self).__init__(generator=generator, **kwargs)
+        super().__init__(generator=generator, **kwargs)
 
     @property
-    def summary_parameters(self):
+    def summary_parameters(self) -> dict:
         """Return the filter parameter."""
         return {'filters': ', '.join(self.getOption('filters'))}
 
-    def pipe(self, program, text):
+    def pipe(self, program: str, text: str) -> str:
         """Pipe a given text through a given program.
 
         @return: processed text after piping
-        @rtype: unicode
         """
-        if not isinstance(text, str):  # py2-py3 compatibility
-            text = text.encode('utf-8')
         pipe = pipes.Template()
-        pipe.append(str(program), '--')  # py2-py3 compatibility
+        pipe.append(program, '--')
 
         # Create a temporary filename to save the piped stuff to
-        tempFilename = '%s.%s' % (tempfile.mktemp(), 'txt')
-        with pipe.open(tempFilename, 'w') as file:
+        file, temp_filename = tempfile.mkstemp(suffix='.txt')
+        file.close()
+        with pipe.open(temp_filename, 'w') as file:
             file.write(text)
 
         # Now retrieve the munged text
-        with open(tempFilename, 'r') as file:
-            unicode_text = file.read()
-        if not isinstance(unicode_text, UnicodeType):  # py2-py3 compatibility
-            unicode_text = unicode_text.decode('utf-8')
+        with open(temp_filename, 'r') as file:
+            text = file.read()
 
         # clean up
-        os.unlink(tempFilename)
-        return unicode_text
+        os.unlink(temp_filename)
+        return text
 
     def treat_page(self):
         """Load the given page, do some changes, and save it."""
@@ -124,7 +117,7 @@ def main(*args):
     # This factory is responsible for processing command line arguments
     # that are also used by other scripts and that determine on which pages
     # to work on.
-    genFactory = pagegenerators.GeneratorFactory()
+    gen_factory = pagegenerators.GeneratorFactory()
     # The program to pipe stuff through
     filters = []
     options = {}
@@ -139,20 +132,18 @@ def main(*args):
         else:
             # check if a standard argument like
             # -start:XYZ or -ref:Asdf was given.
-            genFactory.handleArg(arg)
+            gen_factory.handleArg(arg)
 
     options['filters'] = filters
 
-    gen = genFactory.getCombinedGenerator(preload=True)
+    gen = gen_factory.getCombinedGenerator(preload=True)
     if gen:
         # The preloading generator is responsible for downloading multiple
         # pages from the wiki simultaneously.
         bot = PiperBot(gen, **options)
         bot.run()
-        return True
     else:
         pywikibot.bot.suggest_help(missing_generator=True)
-        return False
 
 
 if __name__ == '__main__':

@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """Tests for the flow module."""
 #
-# (C) Pywikibot team, 2015
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from contextlib import suppress
 
 from pywikibot.exceptions import NoPage
 from pywikibot.flow import Board, Topic, Post
-from pywikibot.tools import UnicodeType as unicode
 
+from tests import unittest
 from tests.aspects import (
     TestCase,
 )
@@ -31,7 +31,7 @@ class TestMediaWikiFlowSandbox(TestCase):
         """Set up unit test."""
         self._page = Board(self.site,
                            'Project talk:Sandbox/Structured_Discussions_test')
-        super(TestMediaWikiFlowSandbox, self).setUp()
+        super().setUp()
 
 
 class TestBoardBasePageMethods(BasePageMethodsTestBase,
@@ -60,7 +60,7 @@ class TestTopicBasePageMethods(BasePageMethodsTestBase):
     def setUp(self):
         """Set up unit test."""
         self._page = Topic(self.site, 'Topic:Sh6wgo5tu3qui1w2')
-        super(TestTopicBasePageMethods, self).setUp()
+        super().setUp()
 
     def test_basepage_methods(self):
         """Test basic Page methods on a Flow topic page."""
@@ -121,24 +121,24 @@ class TestFlowLoading(TestMediaWikiFlowSandbox):
         wikitext = post.get(format='wikitext')
         self.assertIn('wikitext', post._content)
         self.assertNotIn('html', post._content)
-        self.assertIsInstance(wikitext, unicode)
+        self.assertIsInstance(wikitext, str)
         self.assertNotEqual(wikitext, '')
         # HTML
         html = post.get(format='html')
         self.assertIn('html', post._content)
         self.assertIn('wikitext', post._content)
-        self.assertIsInstance(html, unicode)
+        self.assertIsInstance(html, str)
         self.assertNotEqual(html, '')
         # Caching (hit)
         post._content['html'] = 'something'
         html = post.get(format='html')
-        self.assertIsInstance(html, unicode)
+        self.assertIsInstance(html, str)
         self.assertEqual(html, 'something')
         self.assertIn('html', post._content)
         # Caching (reload)
         post._content['html'] = 'something'
         html = post.get(format='html', force=True)
-        self.assertIsInstance(html, unicode)
+        self.assertIsInstance(html, str)
         self.assertNotEqual(html, 'something')
         self.assertIn('html', post._content)
 
@@ -157,7 +157,7 @@ class TestFlowFactoryErrors(TestCase):
 
     """Test errors associated with class methods generating Flow objects."""
 
-    family = 'test'
+    family = 'wikipedia'
     code = 'test'
 
     cached = True
@@ -168,7 +168,8 @@ class TestFlowFactoryErrors(TestCase):
         real_topic = Topic(self.site, 'Topic:Slbktgav46omarsd')
         fake_topic = Topic(self.site, 'Topic:Abcdefgh12345678')
         # Topic.from_topiclist_data
-        self.assertRaises(TypeError, Topic.from_topiclist_data, self.site, '', {})
+        self.assertRaises(TypeError, Topic.from_topiclist_data, self.site,
+                          '', {})
         self.assertRaises(TypeError, Topic.from_topiclist_data, board, 521, {})
         self.assertRaises(TypeError, Topic.from_topiclist_data, board,
                           'slbktgav46omarsd', [0, 1, 2])
@@ -216,7 +217,7 @@ class TestFlowFactoryErrors(TestCase):
 class TestFlowTopic(TestCase):
     """Test Topic functions."""
 
-    family = 'test'
+    family = 'wikipedia'
     code = 'test'
 
     def test_topic(self):
@@ -224,7 +225,7 @@ class TestFlowTopic(TestCase):
         topic = Topic(self.site, 'Topic:U5y4l1rzitlplyc5')
         self.assertEqual(topic.root.uuid, 'u5y4l1rzitlplyc5')
         replies = topic.replies()
-        self.assertEqual(len(replies), 3)
+        self.assertLength(replies, 4)
         self.assertTrue(all(isinstance(reply, Post)
                             for reply in replies))
         self.assertEqual(replies[1].uuid, 'u5y5lysqcvyne4k1')
@@ -242,3 +243,8 @@ class TestFlowTopic(TestCase):
         topic_hidden = Topic(self.site, 'Topic:U5y53rn0dp6h70nw')
         self.assertFalse(topic_hidden.is_locked)
         self.assertTrue(topic_hidden.is_moderated)
+
+
+if __name__ == '__main__':  # pragma: no cover
+    with suppress(SystemExit):
+        unittest.main()

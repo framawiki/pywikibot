@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Tests for isbn script."""
 #
-# (C) Pywikibot team, 2014-2017
+# (C) Pywikibot team, 2014-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import pywikibot
 
@@ -16,10 +16,11 @@ except ImportError:
 
 from pywikibot import Bot, Claim, ItemPage
 from pywikibot.cosmetic_changes import CosmeticChangesToolkit, CANCEL_MATCH
+from pywikibot.tools import has_module
 
 from scripts.isbn import (
-    ISBN10, ISBN13, InvalidIsbnException as IsbnExc,
-    getIsbn, hyphenateIsbnNumbers, convertIsbn10toIsbn13,
+    InvalidIsbnException as IsbnExc,
+    hyphenateIsbnNumbers, convertIsbn10toIsbn13,
     main
 )
 
@@ -28,6 +29,7 @@ from tests.aspects import (
     WikibaseTestCase, ScriptMainTestCase,
 )
 from tests.bot_tests import TWNBotTestCase
+from tests.utils import empty_sites
 
 if StdNumValidationError:
     AnyIsbnValidationException = (StdNumValidationError, IsbnExc)
@@ -49,6 +51,12 @@ class TestCosmeticChangesISBN(DefaultDrySiteTestCase):
         text = cc.fix_ISBN(' ISBN 9780975229804 ')
         self.assertEqual(text, ' ISBN 978-0-9752298-0-4 ')
 
+        text = cc.fix_ISBN(' ISBN 9783955390631 ')
+        self.assertEqual(text, ' ISBN 978-3-95539-063-1 ')
+
+        text = cc.fix_ISBN(' ISBN 9791091447034 ')
+        self.assertEqual(text, ' ISBN 979-10-91447-03-4 ')
+
     def test_invalid_isbn(self):
         """Test that it'll fail when the ISBN is invalid."""
         cc = CosmeticChangesToolkit(self.site, namespace=0)
@@ -68,7 +76,8 @@ class TestCosmeticChangesISBN(DefaultDrySiteTestCase):
 
     def test_ignore_invalid_isbn(self):
         """Test fixing ISBN numbers with an invalid ISBN."""
-        cc = CosmeticChangesToolkit(self.site, namespace=0, ignore=CANCEL_MATCH)
+        cc = CosmeticChangesToolkit(self.site, namespace=0,
+                                    ignore=CANCEL_MATCH)
 
         text = cc.fix_ISBN(' ISBN 0975229LOL ISBN 9780975229804 ')
         self.assertEqual(text, ' ISBN 0975229LOL ISBN 978-0-9752298-0-4 ')
@@ -80,51 +89,8 @@ class TestIsbn(TestCase):
 
     net = False
 
-    def test_isbn10(self):
-        """Test ISBN10."""
-        # Test general features
-        isbn = ISBN10('097522980x')
-        isbn.format()
-        self.assertEqual(isbn.code, '0-9752298-0-X')
-        self.assertEqual(isbn.digits(),
-                         ['0', '9', '7', '5', '2', '2', '9', '8', '0', 'X'])
-
-        # Converting to ISBN13
-        isbn13 = isbn.toISBN13()
-        self.assertEqual(isbn13.code, '978-0-9752298-0-4')
-
-        # Errors
-        self.assertRaises(IsbnExc, ISBN10, '0975229LOL')  # Invalid characters
-        self.assertRaises(IsbnExc, ISBN10, '0975229801')  # Invalid checksum
-        self.assertRaises(IsbnExc, ISBN10, '09752298')  # Invalid length
-        self.assertRaises(IsbnExc, ISBN10, '09752X9801')  # X in the middle
-
-    def test_isbn13(self):
-        """Test ISBN13."""
-        # Test general features
-        isbn = ISBN13('9783161484100')
-        isbn.format()
-        self.assertEqual(isbn.code, '978-3-16-148410-0')
-        self.assertEqual(isbn.digits(),
-                         [9, 7, 8, 3, 1, 6, 1, 4, 8, 4, 1, 0, 0])
-        isbn = ISBN13('978809027341', checksumMissing=True)
-        self.assertEqual(isbn.code, '9788090273412')
-
-        # Errors
-        self.assertRaises(IsbnExc, ISBN13, '9783161484LOL')  # Invalid chars
-        self.assertRaises(IsbnExc, ISBN13, '9783161484105')  # Invalid checksum
-        self.assertRaises(IsbnExc, ISBN13, '9783161484')  # Invalid length
-
     def test_general(self):
         """Test things that apply both to ISBN10 and ISBN13."""
-        # getIsbn
-        self.assertIsInstance(getIsbn('097522980x'), ISBN10)
-        self.assertIsInstance(getIsbn('9783161484100'), ISBN13)
-        self.assertRaisesRegex(IsbnExc,
-                               'ISBN-13: The ISBN 097522 is not 13 digits '
-                               'long. / ISBN-10: The ISBN 097522 is not 10 '
-                               'digits long.', getIsbn, '097522')
-
         # hyphenateIsbnNumbers
         self.assertEqual(hyphenateIsbnNumbers('ISBN 097522980x'),
                          'ISBN 0-9752298-0-X')
@@ -142,22 +108,25 @@ class TestIsbn(TestCase):
             'ISBN 978-0-7869-3669-4'
         )
 
-        # Errors
-        isbn = ISBN10('9492098059')
-        self.assertRaisesRegex(IsbnExc,
-                               'ISBN 9492098059: group number unknown.',
-                               isbn.format)
-        isbn = ISBN10('9095012042')
-        self.assertRaisesRegex(IsbnExc,
-                               'ISBN 9095012042: publisher number unknown.',
-                               isbn.format)
+    @unittest.expectedFailure  # T144288
+    def test_general_failing(self):
+        """Test things that apply both to ISBN10 and ISBN13.
+
+        This test fails due to outdated libraries.
+        """
+        # hyphenateIsbnNumbers
+        self.assertEqual(hyphenateIsbnNumbers('ISBN 9791091447089'),
+                         'ISBN 979-10-91447-08-9')
+        # convertIsbn10toIsbn13
+        self.assertEqual(convertIsbn10toIsbn13('ISBN 10-91447-08-X'),
+                         'ISBN 979-10-91447-08-9')
 
 
 class TestIsbnBot(ScriptMainTestCase):
 
     """Test isbnbot with non-write patching (if the testpage exists)."""
 
-    family = 'test'
+    family = 'wikipedia'
     code = 'test'
 
     user = True
@@ -191,7 +160,8 @@ def userPut_dummy(self, page, oldtext, newtext, **kwargs):
     TestIsbnBot.newtext = newtext
 
 
-class TestIsbnWikibaseBot(ScriptMainTestCase, WikibaseTestCase, TWNBotTestCase):
+class TestIsbnWikibaseBot(ScriptMainTestCase, WikibaseTestCase,
+                          TWNBotTestCase):
 
     """Test isbnbot on Wikibase site with non-write patching."""
 
@@ -214,15 +184,15 @@ class TestIsbnWikibaseBot(ScriptMainTestCase, WikibaseTestCase, TWNBotTestCase):
                     prop_page = pywikibot.PropertyPage(cls.get_repo(),
                                                        claim.getID())
                     prop_page.get()
-                    if ('ISBN-10' in prop_page.labels.values() and
-                            claim.getTarget() == '097522980x'):
+                    if ('ISBN-10' in prop_page.labels.values()
+                            and claim.getTarget() == '097522980x'):
                         return
             raise unittest.SkipTest(
-                u'%s: "ISBN-10" property was not found in '
-                u'"IsbnWikibaseBotUnitTest" item page' % cls.__name__)
+                '{}: "ISBN-10" property was not found in '
+                '"IsbnWikibaseBotUnitTest" item page'.format(cls.__name__))
         raise unittest.SkipTest(
-            u'%s: "IsbnWikibaseBotUnitTest" item page was not found'
-            % cls.__name__)
+            '{}: "IsbnWikibaseBotUnitTest" item page was not found'
+            .format(cls.__name__))
 
     def setUp(self):
         """Patch Claim.setTarget and ItemPage.editEntity which write."""
@@ -240,14 +210,15 @@ class TestIsbnWikibaseBot(ScriptMainTestCase, WikibaseTestCase, TWNBotTestCase):
 
     def test_isbn_format(self):
         """Test format using the bot and wikibase."""
-        main('-page:' + self.test_page_qid, '-always', '-format')
-        self.assertEqual(self.setTarget_value, '0-9752298-0-X')
+        with empty_sites():
+            main('-page:' + self.test_page_qid, '-always', '-format')
+            self.assertEqual(self.setTarget_value, '0-9752298-0-X')
 
-    @unittest.expectedFailure  # See T174870
     def test_isbn_to13(self):
         """Test to13 using the bot and wikibase."""
-        main('-page:' + self.test_page_qid, '-always', '-to13')
-        self.assertTrue(self.setTarget_value, '978-0975229804')
+        with empty_sites():
+            main('-page:' + self.test_page_qid, '-always', '-to13')
+            self.assertTrue(self.setTarget_value, '978-0975229804')
 
 
 def setTarget_dummy(self, value):
@@ -259,6 +230,13 @@ def setTarget_dummy(self, value):
 def editEntity_dummy(self, data=None, **kwargs):
     """Avoid that editEntity writes."""
     pass
+
+
+def setUpModule():  # noqa: N802
+    """Skip tests if isbn libraries are missing."""
+    if not (has_module('stdnum', version='1.13')
+            or has_module('isbnlib', version='3.9.10')):
+        raise unittest.SkipTest('neither python-stdlib nor isbnlib available.')
 
 
 if __name__ == '__main__':  # pragma: no cover

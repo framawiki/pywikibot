@@ -3,11 +3,13 @@
 """
 Edit a Wikipedia article with your favourite editor.
 
- TODO: - non existing pages
-       - edit conflicts
-       - minor edits
-       - watch/unwatch
-       - ...
+TODO:
+
+ - non existing pages
+ - edit conflicts
+ - minor edits
+ - watch/unwatch
+ - ...
 
 The following parameters are supported:
 
@@ -22,12 +24,11 @@ The following parameters are supported:
 --watch
 """
 #
-# (C) Gerrit Holl, 2004
-# (C) Pywikibot team, 2004-2017
+# (C) Pywikibot team, 2004-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import argparse
 import os
@@ -45,53 +46,47 @@ class ArticleEditor(object):
 
     """Edit a wiki page."""
 
-    # join lines if line starts with this ones
-    # TODO: No apparent usage
-    # joinchars = string.letters + '[]' + string.digits
-
     def __init__(self, *args):
-        """Constructor."""
+        """Initializer."""
         self.set_options(*args)
-        self.setpage()
         self.site = pywikibot.Site()
+        self.setpage()
 
     def set_options(self, *args):
         """Parse commandline and set options attribute."""
         my_args = pywikibot.handle_args(args)
 
         parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument("-r", "--edit_redirect", "--edit-redirect",
-                            action="store_true", help="Ignore/edit redirects")
-        parser.add_argument("-p", "--page", help="Page to edit")
-        parser.add_argument("-w", "--watch", action="store_true",
-                            help="Watch article after edit")
+        parser.add_argument('-r', '--edit_redirect', '--edit-redirect',
+                            action='store_true', help='Ignore/edit redirects')
+        parser.add_argument('-p', '--page', help='Page to edit')
+        parser.add_argument('-w', '--watch', action='store_true',
+                            help='Watch article after edit')
         # convenience positional argument so we can act like a normal editor
-        parser.add_argument("wikipage", nargs="?", help="Page to edit")
+        parser.add_argument('wikipage', nargs='?', help='Page to edit')
         self.options = parser.parse_args(my_args)
 
         if self.options.page and self.options.wikipage:
-            pywikibot.error("Multiple pages passed. Please specify a single "
-                            "page to edit.")
+            pywikibot.error('Multiple pages passed. Please specify a single '
+                            'page to edit.')
             sys.exit(1)
         self.options.page = self.options.page or self.options.wikipage
 
     def setpage(self):
         """Set page and page title."""
-        site = pywikibot.Site()
-        pageTitle = self.options.page or pywikibot.input("Page to edit:")
-        self.page = pywikibot.Page(pywikibot.Link(pageTitle, site))
+        page_title = self.options.page or pywikibot.input('Page to edit:')
+        self.page = pywikibot.Page(pywikibot.Link(page_title, self.site))
         if not self.options.edit_redirect and self.page.isRedirectPage():
             self.page = self.page.getRedirectTarget()
 
     def handle_edit_conflict(self, new):
-        """When an edit conflict occures save the new text to a file."""
+        """When an edit conflict occurs save the new text to a file."""
         fn = os.path.join(tempfile.gettempdir(), self.page.title())
-        fp = open(fn, 'w')
-        fp.write(new)
-        fp.close()
+        with open(fn, 'w') as fp:
+            fp.write(new)
         pywikibot.output(
-            "An edit conflict has arisen. Your edit has been saved to %s. "
-            "Please try again." % fn)
+            'An edit conflict has arisen. Your edit has been saved to {}. '
+            'Please try again.'.format(fn))
 
     def run(self):
         """Run the bot."""
@@ -99,21 +94,21 @@ class ArticleEditor(object):
         try:
             old = self.page.get(get_redirect=self.options.edit_redirect)
         except pywikibot.NoPage:
-            old = ""
-        textEditor = TextEditor()
-        new = textEditor.edit(old)
+            old = ''
+        text_editor = TextEditor()
+        new = text_editor.edit(old)
         if new and old != new:
             pywikibot.showDiff(old, new)
-            changes = pywikibot.input("What did you change?")
-            comment = i18n.twtranslate(pywikibot.Site(), 'editarticle-edit',
+            changes = pywikibot.input('What did you change?')
+            comment = i18n.twtranslate(self.site, 'editarticle-edit',
                                        {'description': changes})
             try:
-                self.page.put(new, summary=comment, minorEdit=False,
-                              watchArticle=self.options.watch)
+                self.page.put(new, summary=comment, minor=False,
+                              watch=self.options.watch)
             except pywikibot.EditConflict:
                 self.handle_edit_conflict(new)
         else:
-            pywikibot.output("Nothing changed")
+            pywikibot.output('Nothing changed')
 
 
 def main(*args):
@@ -123,11 +118,11 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     app = ArticleEditor(*args)
     app.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

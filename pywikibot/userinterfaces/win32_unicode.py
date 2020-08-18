@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Stdout, stderr and argv support for unicode."""
 #
-# (C) David-Sarah Hopwood, 2010
-# (C) Pywikibot team, 2012-2015
+# (C) Pywikibot team, 2012-2018
 #
 ##############################################
 # Support for unicode in windows cmd.exe
@@ -20,26 +19,18 @@
 #
 ################################################
 #
-# stdin support added by Merlijn van Deen <valhallasw@gmail.com>, March 2012
 # Licensed under both CC-BY-SA and the MIT license.
 #
 ################################################
-from __future__ import absolute_import, print_function, unicode_literals
-
 import codecs
 import sys
 
-from ctypes import Structure, byref, c_int, create_unicode_buffer, sizeof
+from contextlib import suppress
+from ctypes import Structure, byref, create_unicode_buffer, sizeof
 from ctypes import c_void_p as LPVOID
 from io import IOBase, UnsupportedOperation
 
-OSWIN32 = (sys.platform == "win32")
-
-if sys.version_info[0] > 2:
-    unicode = str
-    PY3 = True
-else:
-    PY3 = False
+OSWIN32 = (sys.platform == 'win32')
 
 stdin = sys.stdin
 stdout = sys.stdout
@@ -50,14 +41,14 @@ original_stderr = sys.stderr
 
 if OSWIN32:
     from ctypes import WINFUNCTYPE, windll, POINTER, WinError
-    from ctypes.wintypes import (BOOL, DWORD, HANDLE, LPCWSTR, LPWSTR,
+    from ctypes.wintypes import (BOOL, DWORD, HANDLE, LPWSTR,
                                  SHORT, ULONG, UINT, WCHAR)
 
 try:
     ReadConsoleW = WINFUNCTYPE(BOOL, HANDLE, LPVOID, DWORD, POINTER(DWORD),
-                               LPVOID)(("ReadConsoleW", windll.kernel32))
+                               LPVOID)(('ReadConsoleW', windll.kernel32))
     WriteConsoleW = WINFUNCTYPE(BOOL, HANDLE, LPWSTR, DWORD, POINTER(DWORD),
-                                LPVOID)(("WriteConsoleW", windll.kernel32))
+                                LPVOID)(('WriteConsoleW', windll.kernel32))
 except NameError:
     ReadConsoleW = WriteConsoleW = None
 
@@ -78,14 +69,11 @@ class UnicodeInput(IOBase):
         """Read one line from the input."""
         maxnum = DWORD(self.bufsize - 1)
         numrecv = DWORD(0)
-        result = ReadConsoleW(self._hConsole, self.buffer, maxnum, byref(numrecv), None)
+        result = ReadConsoleW(self._hConsole, self.buffer, maxnum,
+                              byref(numrecv), None)
         if not result:
-            raise Exception("stdin failure")
-        data = self.buffer.value[:numrecv.value]
-        if not PY3:
-            return data.encode(self.encoding)
-        else:
-            return data
+            raise Exception('stdin failure')
+        return self.buffer.value[:numrecv.value]
 
 
 class UnicodeOutput(IOBase):
@@ -113,7 +101,7 @@ class UnicodeOutput(IOBase):
             try:
                 self._stream.flush()
             except Exception as e:
-                _complain("%s.flush: %r from %r"
+                _complain('%s.flush: %r from %r'
                           % (self.name, e, self._stream))
                 raise
 
@@ -121,11 +109,9 @@ class UnicodeOutput(IOBase):
         """Write the text to the output."""
         try:
             if self._hConsole is None:
-                if not PY3 and isinstance(text, unicode):
-                    text = text.encode('utf-8')
                 self._stream.write(text)
             else:
-                if not isinstance(text, unicode):
+                if not isinstance(text, str):
                     text = bytes(text).decode('utf-8')
                 remaining = len(text)
                 while remaining > 0:
@@ -137,14 +123,14 @@ class UnicodeOutput(IOBase):
                                            min(remaining, 10000),
                                            byref(n), None)
                     if retval == 0 or n.value == 0:
-                        raise IOError("WriteConsoleW returned %r, n.value = %r"
+                        raise IOError('WriteConsoleW returned %r, n.value = %r'
                                       % (retval, n.value))
                     remaining -= n.value
                     if remaining == 0:
                         break
                     text = text[n.value:]
         except Exception as e:
-            _complain("%s.write: %r" % (self.name, e))
+            _complain('%s.write: %r' % (self.name, e))
             raise
 
     def writelines(self, lines):
@@ -153,7 +139,7 @@ class UnicodeOutput(IOBase):
             for line in lines:
                 self.write(line)
         except Exception as e:
-            _complain("%s.writelines: %r" % (self.name, e))
+            _complain('%s.writelines: %r' % (self.name, e))
             raise
 
 
@@ -163,13 +149,12 @@ def old_fileno(std_name):
     # handle those like std streams which don't have fileno at all
     std = getattr(sys, 'std{0}'.format(std_name))
     if hasattr(std, 'fileno'):
-        try:
+        with suppress(UnsupportedOperation):
             return std.fileno()
-        except UnsupportedOperation:
-            pass
+    return None
 
 
-# If any exception occurs in this code, we'll probably try to print it on stderr,
+# If any exception occurs in this code, try to print it on stderr,
 # which makes for frustrating debugging if stderr is directed to our wrapper.
 # So be paranoid about catching errors and reporting them to original_stderr,
 # so that we can at least see them.
@@ -181,7 +166,8 @@ def _complain(message):
 def register_cp65001():
     """Register codecs cp65001 as utf-8."""
     # Work around <http://bugs.python.org/issue6058>.
-    codecs.register(lambda name: name == 'cp65001' and codecs.lookup('utf-8') or None)
+    codecs.register(lambda name: name == 'cp65001'
+                    and codecs.lookup('utf-8') or None)
 
 
 def force_truetype_console(h_stdout):
@@ -207,14 +193,14 @@ def force_truetype_console(h_stdout):
             HANDLE,  # hConsoleOutput
             BOOL,    # bMaximumWindow
             POINTER(CONSOLE_FONT_INFOEX),  # lpConsoleCurrentFontEx
-        )(("GetCurrentConsoleFontEx", windll.kernel32))
+        )(('GetCurrentConsoleFontEx', windll.kernel32))
 
         SetCurrentConsoleFontEx = WINFUNCTYPE(
             BOOL,
             HANDLE,  # hConsoleOutput
             BOOL,    # bMaximumWindow
             POINTER(CONSOLE_FONT_INFOEX),  # lpConsoleCurrentFontEx
-        )(("SetCurrentConsoleFontEx", windll.kernel32))
+        )(('SetCurrentConsoleFontEx', windll.kernel32))
     except AttributeError:
         # pre Windows Vista. Return without doing anything.
         return
@@ -230,7 +216,7 @@ def force_truetype_console(h_stdout):
     if not truetype_font:
         new_font = CONSOLE_FONT_INFOEX()
         new_font.cbSize = sizeof(CONSOLE_FONT_INFOEX)
-        new_font.FaceName = u'Lucida Console'
+        new_font.FaceName = 'Lucida Console'
 
         if not SetCurrentConsoleFontEx(h_stdout, True, byref(new_font)):
             WinError()
@@ -244,10 +230,11 @@ def get_unicode_console():
     @rtype: tuple
     """
     # Make Unicode console output work independently of the current code page.
-    # This also fixes <http://bugs.python.org/issue1602>.
-    # Credit to Michael Kaplan <http://blogs.msdn.com/b/michkap/archive/2010/04/07/9989346.aspx>
+    # This also fixes http://bugs.python.org/issue1602.
+    # Credit to Michael Kaplan
+    # http://blogs.msdn.com/b/michkap/archive/2010/04/07/9989346.aspx
     # and TZOmegaTZIOY
-    # <https://stackoverflow.com/questions/878972/windows-cmd-encoding-change-causes-python-crash/1432462#1432462>.
+    # https://stackoverflow.com/questions/878972/windows-cmd-encoding-change-causes-python-crash/1432462#1432462
 
     global stdin, stdout, stderr, argv
 
@@ -265,23 +252,25 @@ def get_unicode_console():
         # <https://msdn.microsoft.com/en-us/library/ms683167(VS.85).aspx>
         # BOOL WINAPI GetConsoleMode(HANDLE hConsole, LPDWORD lpMode);
 
-        GetStdHandle = WINFUNCTYPE(HANDLE, DWORD)(("GetStdHandle", windll.kernel32))
+        GetStdHandle = WINFUNCTYPE(HANDLE, DWORD)(('GetStdHandle',
+                                                   windll.kernel32))
         STD_INPUT_HANDLE = DWORD(-10)
         STD_OUTPUT_HANDLE = DWORD(-11)
         STD_ERROR_HANDLE = DWORD(-12)
-        GetFileType = WINFUNCTYPE(DWORD, DWORD)(("GetFileType", windll.kernel32))
+        GetFileType = WINFUNCTYPE(DWORD, DWORD)(('GetFileType',
+                                                 windll.kernel32))
         FILE_TYPE_CHAR = 0x0002
         FILE_TYPE_REMOTE = 0x8000
         GetConsoleMode = (WINFUNCTYPE(BOOL, HANDLE, POINTER(DWORD))
-                          (("GetConsoleMode", windll.kernel32)))
+                          (('GetConsoleMode', windll.kernel32)))
         INVALID_HANDLE_VALUE = DWORD(-1).value
 
         def not_a_console(handle):
             """Return whether the handle is not to a console."""
             if handle == INVALID_HANDLE_VALUE or handle is None:
                 return True
-            return ((GetFileType(handle) & ~FILE_TYPE_REMOTE) != FILE_TYPE_CHAR or
-                    GetConsoleMode(handle, byref(DWORD())) == 0)
+            return ((GetFileType(handle) & ~FILE_TYPE_REMOTE) != FILE_TYPE_CHAR
+                    or GetConsoleMode(handle, byref(DWORD())) == 0)
 
         old_stdin_fileno = old_fileno('in')
         old_stdout_fileno = old_fileno('out')
@@ -329,42 +318,8 @@ def get_unicode_console():
                 stderr = UnicodeOutput(None, sys.stderr, old_stderr_fileno,
                                        '<Unicode redirected stderr>')
     except Exception as e:
-        _complain("exception %r while fixing up sys.stdout and sys.stderr" % (e,))
-
-    # While we're at it, let's unmangle the command-line arguments:
-
-    # This works around <http://bugs.python.org/issue2128>.
-    GetCommandLineW = WINFUNCTYPE(LPWSTR)(("GetCommandLineW", windll.kernel32))
-    CommandLineToArgvW = (WINFUNCTYPE(POINTER(LPWSTR), LPCWSTR, POINTER(c_int))
-                          (("CommandLineToArgvW", windll.shell32)))
-
-    argc = c_int(0)
-    argv_unicode = CommandLineToArgvW(GetCommandLineW(), byref(argc))
-
-    argv = [argv_unicode[i].encode('utf-8') for i in range(0, argc.value)]
-
-    if not hasattr(sys, 'frozen'):
-        # If this is an executable produced by py2exe or bbfreeze, then it will
-        # have been invoked directly. Otherwise, unicode_argv[0] is the Python
-        # interpreter, so skip that.
-        argv = argv[1:]
-
-        # Also skip option arguments to the Python interpreter.
-        while len(argv) > 0:
-            arg = argv[0]
-            if not arg.startswith(b"-") or arg == u"-":
-                break
-            argv = argv[1:]
-            if arg == u'-m':
-                # sys.argv[0] should really be the absolute path of the module source,
-                # but never mind
-                break
-            if arg == u'-c':
-                argv[0] = u'-c'
-                break
-
-    if argv == []:
-        argv = [u'']
+        _complain('exception {!r} while fixing up sys.stdout and sys.stderr'
+                  .format(e))
 
     return stdin, stdout, stderr, argv
 

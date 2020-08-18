@@ -3,19 +3,21 @@
 """
 This bot searches for selflinks and allows removing them.
 
-These command line parameters can be used to specify which pages to work on:
-
-&params;
+The following parameters are supported:
 
 -always           Unlink always but don't prompt you for each replacement.
                   ATTENTION: Use this with care!
+
+These command line parameters can be used to specify which pages to work on:
+
+&params;
 """
 #
-# (C) Pywikibot team, 2006-2017
+# (C) Pywikibot team, 2006-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import pywikibot
 
@@ -25,9 +27,7 @@ from pywikibot.specialbots import BaseUnlinkBot
 
 # This is required for the text that is shown when you run this script
 # with the parameter -help.
-docuReplacements = {
-    '&params;': parameterHelp,
-}
+docuReplacements = {'&params;': parameterHelp}  # noqa: N816
 
 
 class _BoldChoice(Choice):
@@ -39,7 +39,7 @@ class _BoldChoice(Choice):
         self._page = page
 
     def handle(self):
-        return "'''{0}'''".format(self._page.title(withSection=False))
+        return "'''{0}'''".format(self._page.title(with_section=False))
 
 
 class SelflinkBot(MultipleSitesBot, BaseUnlinkBot):
@@ -49,7 +49,7 @@ class SelflinkBot(MultipleSitesBot, BaseUnlinkBot):
     summary_key = 'selflink-remove'
 
     def __init__(self, generator, **kwargs):
-        """Constructor."""
+        """Initializer."""
         super(SelflinkBot, self).__init__(**kwargs)
         self.generator = generator
 
@@ -67,8 +67,8 @@ class SelflinkBot(MultipleSitesBot, BaseUnlinkBot):
         # https://de.wikipedia.org/w/index.php?diff=next&oldid=35721641
         if '<imagemap>' in self.current_page.text:
             pywikibot.output(
-                u'Skipping page %s because it contains an image map.'
-                % self.current_page.title(asLink=True))
+                'Skipping page {0} because it contains an image map.'
+                .format(self.current_page.title(as_link=True)))
             return
         self.unlink(self.current_page)
 
@@ -80,30 +80,27 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
-    # Page generator
-    gen = None
     # Process global args and prepare generator args parser
     local_args = pywikibot.handle_args(args)
-    genFactory = GeneratorFactory()
-    botArgs = {}
+    gen_factory = GeneratorFactory()
+    bot_args = {}
 
     for arg in local_args:
         if arg == '-always':
-            botArgs['always'] = True
+            bot_args['always'] = True
         else:
-            genFactory.handleArg(arg)
+            gen_factory.handleArg(arg)
 
-    gen = genFactory.getCombinedGenerator(preload=True)
+    gen = gen_factory.getCombinedGenerator(preload=True)
     if not gen:
         pywikibot.bot.suggest_help(missing_generator=True)
-        return False
+        return
 
-    bot = SelflinkBot(gen, **botArgs)
+    bot = SelflinkBot(gen, **bot_args)
     bot.run()
-    return True
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

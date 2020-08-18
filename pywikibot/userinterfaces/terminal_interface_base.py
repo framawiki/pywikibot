@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Base for terminal user interfaces."""
 #
-# (C) Pywikibot team, 2003-2016
+# (C) Pywikibot team, 2003-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import getpass
 import logging
 import math
@@ -15,15 +13,13 @@ import sys
 import threading
 
 import pywikibot
-
-from pywikibot import config
-
+from pywikibot import config2 as config
 from pywikibot.bot import VERBOSE, INFO, STDOUT, INPUT, WARNING
-from pywikibot.bot_choice import (
-    Option, OutputOption, StandardOption, ChoiceException, QuitKeyboardInterrupt,
-)
-from pywikibot.tools import deprecated, PY2
+from pywikibot.bot_choice import (ChoiceException, Option, OutputOption,
+                                  QuitKeyboardInterrupt, StandardOption)
+from pywikibot.tools import deprecated
 from pywikibot.userinterfaces import transliteration
+
 
 transliterator = transliteration.transliterator(config.console_encoding)
 
@@ -50,11 +46,8 @@ colors = [
 _color_pat = '%s|previous' % '|'.join(colors)
 colorTagR = re.compile('\03{((:?%s);?(:?%s)?)}' % (_color_pat, _color_pat))
 
-if __debug__ and not PY2:
-    raw_input = NotImplemented  # pyflakes workaround
 
-
-class UI(object):
+class UI:
 
     """Base for terminal user interfaces."""
 
@@ -64,8 +57,8 @@ class UI(object):
         """
         Initialize the UI.
 
-        This caches the std-streams locally so any attempts to monkey-patch the
-        streams later will not work.
+        This caches the std-streams locally so any attempts to
+        monkey-patch the streams later will not work.
         """
         self.stdin = sys.stdin
         self.stdout = sys.stdout
@@ -100,7 +93,7 @@ class UI(object):
         # this handler ignores levels above INPUT
         default_handler.addFilter(MaxLevelFilter(INPUT))
         default_handler.setFormatter(
-            TerminalFormatter(fmt="%(message)s%(newline)s"))
+            TerminalFormatter(fmt='%(message)s%(newline)s'))
         root_logger.addHandler(default_handler)
 
         # handler for level STDOUT
@@ -108,17 +101,17 @@ class UI(object):
         output_handler.setLevel(STDOUT)
         output_handler.addFilter(MaxLevelFilter(STDOUT))
         output_handler.setFormatter(
-            TerminalFormatter(fmt="%(message)s%(newline)s"))
+            TerminalFormatter(fmt='%(message)s%(newline)s'))
         root_logger.addHandler(output_handler)
 
         # handler for levels WARNING and higher
         warning_handler = TerminalHandler(self, strm=self.stderr)
         warning_handler.setLevel(WARNING)
         warning_handler.setFormatter(
-            TerminalFormatter(fmt="%(levelname)s: %(message)s%(newline)s"))
+            TerminalFormatter(fmt='%(levelname)s: %(message)s%(newline)s'))
         root_logger.addHandler(warning_handler)
 
-        warnings_logger = logging.getLogger("py.warnings")
+        warnings_logger = logging.getLogger('py.warnings')
         warnings_logger.addHandler(warning_handler)
 
     def encounter_color(self, color, target_stream):
@@ -139,8 +132,6 @@ class UI(object):
 
     def _write(self, text, target_stream):
         """Optionally encode and write the text to the target stream."""
-        if PY2:
-            text = text.encode(self.encoding, 'replace')
         target_stream.write(text)
 
     def support_color(self, target_stream):
@@ -149,7 +140,8 @@ class UI(object):
 
     def _print(self, text, target_stream):
         """Write the text to the target stream handling the colors."""
-        colorized = config.colorized_output and self.support_color(target_stream)
+        colorized = (config.colorized_output
+                     and self.support_color(target_stream))
         colored_line = False
         # Color tags might be cascaded, e.g. because of transliteration.
         # Therefore we need this stack.
@@ -203,16 +195,17 @@ class UI(object):
             codecedText = text.encode(self.encoding,
                                       'replace').decode(self.encoding)
             if self.transliteration_target:
-                codecedText = codecedText.encode(self.transliteration_target,
-                                                 'replace').decode(self.transliteration_target)
+                codecedText = codecedText.encode(
+                    self.transliteration_target,
+                    'replace').decode(self.transliteration_target)
             transliteratedText = ''
             # Note: A transliteration replacement might be longer than the
             # original character, e.g. ч is transliterated to ch.
-            prev = "-"
-            for i in range(len(codecedText)):
+            prev = '-'
+            for i, char in enumerate(codecedText):
                 # work on characters that couldn't be encoded, but not on
                 # original question marks.
-                if codecedText[i] == '?' and text[i] != u'?':
+                if char == '?' and text[i] != '?':
                     try:
                         transliterated = transliterator.transliterate(
                             text[i], default='?', prev=prev, next=text[i + 1])
@@ -226,12 +219,12 @@ class UI(object):
                                           % transliterated
                     # memorize if we replaced a single letter by multiple
                     # letters.
-                    if len(transliterated) > 0:
+                    if transliterated:
                         prev = transliterated[-1]
                 else:
                     # no need to try to transliterate.
-                    transliteratedText += codecedText[i]
-                    prev = codecedText[i]
+                    transliteratedText += char
+                    prev = char
             text = transliteratedText
 
         if not targetStream:
@@ -243,10 +236,8 @@ class UI(object):
         self._print(text, targetStream)
 
     def _raw_input(self):
-        if not PY2:
-            return input()
-        else:
-            return raw_input()
+        # May be overridden by subclass
+        return input()
 
     def input(self, question, password=False, default='', force=False):
         """
@@ -267,7 +258,7 @@ class UI(object):
         @type default: basestring
         @param force: Automatically use the default
         @type force: bool
-        @rtype: unicode
+        @rtype: str
         """
         assert(not password or not default)
         end_marker = ':'
@@ -308,12 +299,10 @@ class UI(object):
                 text = self._raw_input()
         except KeyboardInterrupt:
             raise QuitKeyboardInterrupt()
-        if PY2:
-            text = text.decode(self.encoding)
         return text
 
-    def input_choice(self, question, options, default=None, return_shortcut=True,
-                     automatic_quit=True, force=False):
+    def input_choice(self, question, options, default=None,
+                     return_shortcut=True, automatic_quit=True, force=False):
         """
         Ask the user and returns a value from the options.
 
@@ -337,8 +326,8 @@ class UI(object):
         @param return_shortcut: Whether the shortcut or the index in the option
             should be returned.
         @type return_shortcut: bool
-        @param automatic_quit: Adds the option 'Quit' ('q') if True and throws a
-            L{QuitKeyboardInterrupt} if selected.
+        @param automatic_quit: Adds the option 'Quit' ('q') if True and throws
+            a L{QuitKeyboardInterrupt} if selected.
         @type automatic_quit: bool
         @param force: Automatically use the default
         @type force: bool
@@ -353,8 +342,8 @@ class UI(object):
             options = [options]
         else:  # make a copy
             options = list(options)
-        if len(options) == 0:
-            raise ValueError(u'No options are given.')
+        if not options:
+            raise ValueError('No options are given.')
         if automatic_quit:
             options += [QuitKeyboardInterrupt()]
         if default:
@@ -362,8 +351,8 @@ class UI(object):
         for i, option in enumerate(options):
             if not isinstance(option, Option):
                 if len(option) != 2:
-                    raise ValueError(u'Option #{0} does not consist of an '
-                                     u'option and shortcut.'.format(i))
+                    raise ValueError('Option #{0} does not consist of an '
+                                     'option and shortcut.'.format(i))
                 options[i] = StandardOption(*option)
             # TODO: Test for uniquity
 
@@ -388,12 +377,11 @@ class UI(object):
 
         if isinstance(answer, ChoiceException):
             raise answer
-        elif not return_shortcut:
+        if not return_shortcut:
             return index
-        else:
-            return answer
+        return answer
 
-    @deprecated('input_choice')
+    @deprecated('input_choice', since='20140825', future_warning=True)
     def inputChoice(self, question, options, hotkeys, default=None):
         """
         Ask the user a question with a predefined list of acceptable answers.
@@ -404,7 +392,8 @@ class UI(object):
         into a tuple list. It always returns the hotkeys and throws no
         L{QuitKeyboardInterrupt} if quit was selected.
         """
-        return self.input_choice(question=question, options=zip(options, hotkeys),
+        return self.input_choice(question=question, options=zip(options,
+                                                                hotkeys),
                                  default=default, return_shortcut=True,
                                  automatic_quit=False)
 
@@ -413,7 +402,8 @@ class UI(object):
         message = question
         clist = answers
 
-        line_template = u"{{0: >{0}}}: {{1}}".format(int(math.log10(len(clist)) + 1))
+        line_template = '{{0: >{0}}}: {{1}}'.format(
+            int(math.log10(len(clist)) + 1))
         for n, i in enumerate(clist):
             pywikibot.output(line_template.format(n + 1, i))
 
@@ -431,7 +421,7 @@ class UI(object):
             if 0 <= choice < len(clist):
                 return clist[choice]
             else:
-                pywikibot.error("Invalid response")
+                pywikibot.error('Invalid response')
 
     def editText(self, text, jumpIndex=None, highlight=None):
         """Return the text as edited by the user.
@@ -439,14 +429,14 @@ class UI(object):
         Uses a Tkinter edit box because we don't have a console editor
 
         @param text: the text to be edited
-        @type text: unicode
+        @type text: str
         @param jumpIndex: position at which to put the caret
         @type jumpIndex: int
         @param highlight: each occurrence of this substring will be highlighted
-        @type highlight: unicode
+        @type highlight: str
         @return: the modified text, or None if the user didn't save the text
             file in his text editor
-        @rtype: unicode or None
+        @rtype: str or None
         """
         try:
             from pywikibot.userinterfaces import gui
@@ -457,11 +447,8 @@ class UI(object):
         return editor.edit(text, jumpIndex=jumpIndex, highlight=highlight)
 
     def argvu(self):
-        """Return the decoded arguments from argv."""
-        try:
-            return [s.decode(self.encoding) for s in self.argv]
-        except AttributeError:  # in python 3, self.argv is unicode and thus cannot be decoded
-            return [s for s in self.argv]
+        """Return copy of argv."""
+        return list(self.argv)
 
 
 class TerminalHandler(logging.Handler):
@@ -508,8 +495,7 @@ class TerminalHandler(logging.Handler):
             if 'message' in record.__dict__:
                 return
 
-            if 'newline' not in record.__dict__:
-                record.__dict__['newline'] = '\n'
+            record.__dict__.setdefault('newline', '\n')
 
         text = self.format(record)
         return self.UI.output(text, targetStream=self.stream)
@@ -532,7 +518,7 @@ class MaxLevelFilter(logging.Filter):
     """
 
     def __init__(self, level=None):
-        """Constructor."""
+        """Initializer."""
         self.level = level
 
     def filter(self, record):

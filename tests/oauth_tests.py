@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Test OAuth functionality."""
 #
-# (C) Pywikibot team, 2015
+# (C) Pywikibot team, 2015-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import os
 
@@ -38,11 +38,11 @@ class OAuthSiteTestCase(TestCase):
         super(OAuthSiteTestCase, self).setUp()
         self.site = self.get_site()
         if not self.site.has_extension('OAuth'):
-            raise unittest.SkipTest('OAuth extension not loaded on test site')
+            self.skipTest('OAuth extension not loaded on test site')
         tokens = self._get_oauth_tokens()
         if tokens is None:
-            raise unittest.SkipTest('OAuth tokens not set')
-        self.assertEqual(len(tokens), 4)
+            self.skipTest('OAuth tokens not set')
+        self.assertLength(tokens, 4)
         self.consumer_token = tokens[:2]
         self.access_token = tokens[2:]
 
@@ -59,8 +59,9 @@ class TestOauthLoginManger(DefaultOAuthSiteTestCase):
     """Test OAuth login manager."""
 
     def _get_login_manager(self):
-        login_manager = OauthLoginManager(self.consumer_token[1], False,
-                                          self.site, self.consumer_token[0])
+        login_manager = OauthLoginManager(password=self.consumer_token[1],
+                                          site=self.site,
+                                          user=self.consumer_token[0])
         # Set access token directly, discard user interaction token fetching
         login_manager._access_token = self.access_token
         return login_manager
@@ -78,7 +79,7 @@ class TestOauthLoginManger(DefaultOAuthSiteTestCase):
         self.assertIsNotNone(login_manager.access_token)
         self.assertIsInstance(login_manager.identity, dict)
         self.assertEqual(login_manager.identity['username'],
-                         self.site.username(sysop=False))
+                         self.site.username())
 
 
 if __name__ == '__main__':  # pragma: no cover

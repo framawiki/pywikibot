@@ -1,33 +1,19 @@
 # -*- coding: utf-8 -*-
 """Objects representing WikiStats API."""
 #
-# (C) Pywikibot team, 2014-2017
+# (C) Pywikibot team, 2014-2020
 #
 # Distributed under the terms of the MIT license.
-from __future__ import absolute_import, unicode_literals
+import csv
 
-import sys
-
+from collections import defaultdict
 from io import BytesIO, StringIO
 
 import pywikibot
-
-if sys.version_info[0] > 2:
-    import csv
-    unicode = str
-else:
-    try:
-        import unicodecsv as csv
-    except ImportError:
-        pywikibot.warning(
-            'WikiStats: unicodecsv package required for using csv in Python 2;'
-            ' falling back to using the larger XML datasets.')
-        csv = None
-
 from pywikibot.comms import http
 
 
-class WikiStats(object):
+class WikiStats:
 
     """
     Light wrapper around WikiStats data, caching responses and data.
@@ -45,12 +31,12 @@ class WikiStats(object):
 
     MISC_SITES_TABLE = 'mediawikis'
 
-    WMF_MULTILANG_TABLES = set([
+    WMF_MULTILANG_TABLES = {
         'wikipedias', 'wiktionaries', 'wikisources', 'wikinews',
         'wikibooks', 'wikiquotes', 'wikivoyage', 'wikiversity',
-    ])
+    }
 
-    OTHER_MULTILANG_TABLES = set([
+    OTHER_MULTILANG_TABLES = {
         'uncyclomedia',
         'rodovid',
         'wikifur',
@@ -61,9 +47,9 @@ class WikiStats(object):
         'lxde',
         'pardus',
         'gentoo',
-    ])
+    }
 
-    OTHER_TABLES = set([
+    OTHER_TABLES = {
         # Farms
         'wikia',
         'wikkii',
@@ -79,25 +65,24 @@ class WikiStats(object):
         'w3cwikis',
         'neoseeker',
         'sourceforge',
-    ])
+    }
 
-    ALL_TABLES = (set([MISC_SITES_TABLE]) | WMF_MULTILANG_TABLES |
-                  OTHER_MULTILANG_TABLES | OTHER_TABLES)
+    ALL_TABLES = ({MISC_SITES_TABLE} | WMF_MULTILANG_TABLES
+                  | OTHER_MULTILANG_TABLES | OTHER_TABLES)
 
     ALL_KEYS = set(FAMILY_MAPPING.keys()) | ALL_TABLES
 
-    def __init__(self, url='https://wikistats.wmflabs.org/'):
-        """Constructor."""
+    def __init__(self, url='https://wikistats.wmflabs.org/') -> None:
+        """Initializer."""
         self.url = url
-        self._raw = {}
-        self._data = {}
+        self._raw = defaultdict(dict)
+        self._data = defaultdict(dict)
 
-    def fetch(self, table, format="xml"):
+    def fetch(self, table: str, format='xml'):
         """
         Fetch data from WikiStats.
 
         @param table: table of data to fetch
-        @type table: basestring
         @param format: Format of data to use
         @type format: 'xml' or 'csv'.
         @rtype: bytes
@@ -106,124 +91,104 @@ class WikiStats(object):
             path = '/{format}/{table}.{format}'
         else:
             path = '/api.php?action=dump&table={table}&format={format}'
-        URL = self.url + path
+        url = self.url + path
 
         if table not in self.ALL_KEYS:
-            pywikibot.warning('WikiStats unknown table %s' % table)
+            pywikibot.warning('WikiStats unknown table ' + table)
 
         if table in self.FAMILY_MAPPING:
             table = self.FAMILY_MAPPING[table]
 
-        r = http.fetch(URL.format(table=table, format=format))
+        r = http.fetch(url.format(table=table, format=format))
         return r.raw
 
-    def raw_cached(self, table, format):
+    def raw_cached(self, table: str, format):
         """
         Cache raw data.
 
         @param table: table of data to fetch
-        @type table: basestring
-        @param format: Format of data to use
+        @param format: format of data to use
         @type format: 'xml' or 'csv'.
         @rtype: bytes
         """
-        if format not in self._raw:
-            self._raw[format] = {}
         if table in self._raw[format]:
             return self._raw[format][table]
 
         data = self.fetch(table, format)
-
         self._raw[format][table] = data
         return data
 
-    def csv(self, table):
+    def csv(self, table: str):
         """
         Fetch and parse CSV for a table.
 
         @param table: table of data to fetch
-        @type table: basestring
         @rtype: list
         """
-        if table in self._data.setdefault('csv', {}):
+        if table in self._data['csv']:
             return self._data['csv'][table]
 
-        data = self.raw_cached(table, 'csv')
-
-        if sys.version_info[0] > 2:
-            f = StringIO(data.decode('utf8'))
-        else:
-            f = BytesIO(data)
-
+        raw = self.raw_cached(table, 'csv')
+        f = StringIO(raw.decode('utf8'))
         reader = csv.DictReader(f)
-
-        data = [site for site in reader]
-
+        data = list(reader)
         self._data['csv'][table] = data
 
         return data
 
-    def xml(self, table):
+    def xml(self, table: str):
         """
         Fetch and parse XML for a table.
 
         @param table: table of data to fetch
-        @type table: basestring
         @rtype: list
         """
-        if table in self._data.setdefault('xml', {}):
+        if table in self._data['xml']:
             return self._data['xml'][table]
 
-        from xml.etree import cElementTree
+        from xml.etree import ElementTree
 
-        data = self.raw_cached(table, 'xml')
-
-        f = BytesIO(data)
-        tree = cElementTree.parse(f)
+        raw = self.raw_cached(table, 'xml')
+        f = BytesIO(raw)
+        tree = ElementTree.parse(f)
 
         data = []
-
         for row in tree.findall('row'):
             site = {}
 
             for field in row.findall('field'):
-                name = unicode(field.get('name'))
-                site[name] = unicode(field.text)
+                name = str(field.get('name'))
+                site[name] = str(field.text)
 
             data.append(site)
 
         self._data['xml'][table] = data
-
         return data
 
-    def get(self, table, format=None):
-        """
-        Get a list of a table of data using format.
+    def get(self, table: str, format='csv'):
+        """Get a list of a table of data.
 
         @param table: table of data to fetch
-        @type table: basestring
-        @param format: Format of data to use
-        @type format: 'xml' or 'csv', or None to autoselect.
         @rtype: list
         """
-        if csv or format == 'csv':
-            data = self.csv(table)
-        else:
-            data = self.xml(table)
-        return data
+        try:
+            func = getattr(self, format)
+        except AttributeError:
+            raise NotImplementedError('Format "{}" is not supported'
+                                      .format(format))
+        return func(table)
 
-    def get_dict(self, table, format=None):
-        """
-        Get dictionary of a table of data using format.
+    def get_dict(self, table: str, format='csv'):
+        """Get dictionary of a table of data using format.
 
         @param table: table of data to fetch
-        @type table: basestring
-        @param format: Format of data to use
+        @param format: format of data to use
         @type format: 'xml' or 'csv', or None to autoselect.
         @rtype: dict
         """
-        return dict((data['prefix'], data)
-                    for data in self.get(table, format))
+        if format is None:  # old autoselect
+            format = 'csv'
+        return {data['prefix']: data for data in self.get(table, format)}
 
     def sorted(self, table, key):
         """
@@ -236,7 +201,7 @@ class WikiStats(object):
                       key=lambda d: int(d[key]),
                       reverse=True)
 
-    def languages_by_size(self, table):
+    def languages_by_size(self, table: str):
         """Return ordered list of languages by size from WikiStats."""
         # This assumes they appear in order of size in the WikiStats dump.
         return [d['prefix'] for d in self.get(table)]

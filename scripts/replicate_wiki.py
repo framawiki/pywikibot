@@ -7,7 +7,7 @@ Example:
 
     python pwb.py replicate_wiki [-r] -ns 10 -family:wikipedia -o nl li fy
 
-or
+or:
 
     python pwb.py replicate_wiki [-r] -ns 10 -family:wikipedia -lang:nl li fy
 
@@ -15,42 +15,38 @@ to copy all templates from an nlwiki to liwiki and fywiki. It will show which
 pages have to be changed if -r is not present, and will only actually write
 pages if -r /is/ present.
 
-You can add replicate_replace to your user_config.py, which has the following
+You can add replicate_replace to your user-config.py, which has the following
 format:
 
-replicate_replace = {
-    'wikipedia:li': {'Hoofdpagina': 'Veurblaad'}
-}
+ replicate_replace = {
+     'wikipedia:li': {'Hoofdpagina': 'Veurblaad'}
+ }
 
 to replace all occurrences of 'Hoofdpagina' with 'Veurblaad' when writing to
 liwiki. Note that this does not take the origin wiki into account.
 
 The following parameters are supported:
--r                actually replace pages (without this option
---replace         you will only get an overview page)
 
--o                original wiki
---original        (you may use -lang:<code> option instead)
+-r, --replace           actually replace pages (without this option
+                        you will only get an overview page)
 
-destination_wiki  destination wiki(s)
+-o, --original          original wiki (you may use -lang:<code> option
+                        instead)
+-ns, --namespace        specify namespace
 
--ns               specify namespace
---namespace
+-dns, --dest-namespace  destination namespace (if different)
 
--dns              destination namespace (if different)
---dest-namespace
+ destination_wiki       destination wiki(s)
 """
 #
-# (C) Kasper Souren, 2012-2013
-# (C) Pywikibot team, 2013-2017
+# (C) Pywikibot team, 2012-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import sys
 
 from argparse import ArgumentParser
+from collections import defaultdict
 
 import pywikibot
 
@@ -58,10 +54,10 @@ from pywikibot import config, Page
 from pywikibot.tools import deprecated
 
 
-@deprecated('BaseSite.namespaces')
+@deprecated('BaseSite.namespaces', since='20150515', future_warning=True)
 def namespaces(site):
     """Return a dictionary from namespace number to prefix."""
-    return dict((n.id, n.custom_name) for n in site.namespaces)
+    return {n.id: n.custom_name for n in site.namespaces}
 
 
 def multiple_replace(text, word_dict):
@@ -71,12 +67,12 @@ def multiple_replace(text, word_dict):
     return text
 
 
-class SyncSites(object):
+class SyncSites:
 
     """Work is done in here."""
 
     def __init__(self, options):
-        """Constructor."""
+        """Initializer."""
         self.options = options
 
         if options.original_wiki:
@@ -84,7 +80,7 @@ class SyncSites(object):
         else:
             original_wiki = config.mylang
 
-        pywikibot.output("Syncing from " + original_wiki)
+        pywikibot.output('Syncing from ' + original_wiki)
 
         family = config.family
 
@@ -101,13 +97,11 @@ class SyncSites(object):
 
         self.sites = [pywikibot.Site(s, family) for s in sites]
 
-        self.differences = {}
-        self.user_diff = {}
+        self.differences = defaultdict(list)
+        self.user_diff = defaultdict(list)
         pywikibot.output('Syncing to ', newline=False)
         for s in self.sites:
             s.login()
-            self.differences[s] = []
-            self.user_diff[s] = []
             pywikibot.output(str(s), newline=False)
         pywikibot.output('')
 
@@ -140,14 +134,15 @@ class SyncSites(object):
         if self.options.namespace:
             pywikibot.output(str(self.options.namespace))
             namespaces = [int(self.options.namespace)]
-        pywikibot.output("Checking these namespaces: %s\n" % (namespaces,))
+        pywikibot.output('Checking these namespaces: {0}\n'
+                         .format((namespaces,)))
 
         for ns in namespaces:
             self.check_namespace(ns)
 
     def check_namespace(self, namespace):
         """Check an entire namespace."""
-        pywikibot.output("\nCHECKING NAMESPACE %s" % namespace)
+        pywikibot.output('\nCHECKING NAMESPACE {0}'.format(namespace))
         pages = (p.title() for p in self.original.allpages(
             '!', namespace=namespace))
         for p in pages:
@@ -167,19 +162,20 @@ class SyncSites(object):
         """Create page on wikis with overview of bot results."""
         for site in self.sites:
             sync_overview_page = Page(site,
-                                      'User:%s/sync.py overview' % site.user())
-            output = "== Pages that differ from original ==\n\n"
+                                      'User:{0}/sync.py overview'
+                                      .format(site.user()))
+            output = '== Pages that differ from original ==\n\n'
             if self.differences[site]:
-                output += "".join('* [[:%s]]\n' % l for l in
-                                  self.differences[site])
+                output += ''.join('* [[:{}]]\n'.format(page_title)
+                                  for page_title in self.differences[site])
             else:
-                output += "All important pages are the same"
+                output += 'All important pages are the same'
 
             output += (
                 '\n\n== Admins from original that are missing here ==\n\n')
             if self.user_diff[site]:
-                output += "".join('* %s\n' % l.replace('_', ' ') for l in
-                                  self.user_diff[site])
+                output += ''.join('* {}\n'.format(user_name.replace('_', ' '))
+                                  for user_name in self.user_diff[site])
             else:
                 output += (
                     'All users from original are also present on this wiki')
@@ -189,13 +185,13 @@ class SyncSites(object):
             sync_overview_page.save(self.put_message(site))
 
     def put_message(self, site):
-        """Return synchonization message."""
-        return ('%s replicate_wiki.py synchronization from %s'
-                % (site.user(), str(self.original)))
+        """Return synchronization message."""
+        return ('{0} replicate_wiki.py synchronization from {1}'
+                .format(site.user(), str(self.original)))
 
     def check_page(self, pagename):
         """Check one page."""
-        pywikibot.output("\nChecking %s" % pagename)
+        pywikibot.output('\nChecking ' + pagename)
         sys.stdout.flush()
         page1 = Page(self.original, pagename)
         txt1 = page1.text
@@ -207,16 +203,13 @@ class SyncSites(object):
 
         for site in self.sites:
             if dest_ns is not None:
-                page2 = Page(site, page1.title(withNamespace=False), dest_ns)
-                pywikibot.output("\nCross namespace, new title: %s"
-                                 % page2.title())
+                page2 = Page(site, page1.title(with_ns=False), dest_ns)
+                pywikibot.output('\nCross namespace, new title: '
+                                 + page2.title())
             else:
                 page2 = Page(site, pagename)
 
-            if page2.exists():
-                txt2 = page2.text
-            else:
-                txt2 = ''
+            txt2 = page2.text
 
             if str(site) in config.replicate_replace:
                 txt_new = multiple_replace(txt1,
@@ -224,11 +217,11 @@ class SyncSites(object):
                 if txt1 != txt_new:
                     pywikibot.output(
                         'NOTE: text replaced using config.sync_replace')
-                    pywikibot.output('%s %s %s' % (txt1, txt_new, txt2))
+                    pywikibot.output('{0} {1} {2}'.format(txt1, txt_new, txt2))
                     txt1 = txt_new
 
             if txt1 != txt2:
-                pywikibot.output("\n %s DIFFERS" % site)
+                pywikibot.output('\n {0} DIFFERS'.format(site))
                 self.differences[site].append(pagename)
 
         if self.options.replace:
@@ -246,22 +239,22 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     my_args = pywikibot.handle_args(args)
 
     parser = ArgumentParser(add_help=False)
-    parser.add_argument("-r", "--replace", action="store_true",
-                        help="actually replace pages (without this "
-                             "option you will only get an overview page)")
-    parser.add_argument("-o", "--original", dest="original_wiki",
-                        help="original wiki")
+    parser.add_argument('-r', '--replace', action='store_true',
+                        help='actually replace pages (without this '
+                             'option you will only get an overview page)')
+    parser.add_argument('-o', '--original', dest='original_wiki',
+                        help='original wiki')
     parser.add_argument('destination_wiki', metavar='destination',
                         type=str, nargs='+', help='destination wiki(s)')
-    parser.add_argument("-ns", "--namespace", dest="namespace",
-                        help="specify namespace")
-    parser.add_argument("-dns", "--dest-namespace", dest="dest_namespace",
-                        help="destination namespace (if different)")
+    parser.add_argument('-ns', '--namespace', dest='namespace',
+                        help='specify namespace')
+    parser.add_argument('-dns', '--dest-namespace', dest='dest_namespace',
+                        help='destination namespace (if different)')
 
     options = parser.parse_args(my_args)
 

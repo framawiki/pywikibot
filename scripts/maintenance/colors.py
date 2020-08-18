@@ -2,17 +2,15 @@
 # -*- coding: utf-8 -*-
 """Utility to show pywikibot colors."""
 #
-# (C) Pywikibot team, 2016
+# (C) Pywikibot team, 2016-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import pywikibot
 
 from pywikibot.tools.formatter import color_format
 from pywikibot.tools import itergroup
-from pywikibot.userinterfaces.terminal_interface_base import colors as colors
+from pywikibot.userinterfaces.terminal_interface_base import colors
 
 
 def main():
@@ -37,7 +35,7 @@ def main():
                 line += ' '
                 line += color_format('{color}{0}{default}',
                                      fg_col.ljust(max_len_fg_colors),
-                                     color='%s;%s' % (fg_col, bg_col))
+                                     color='{};{}'.format(fg_col, bg_col))
 
             line = '{0} {1}'.format(bg_col.ljust(max_len_bc_color), line)
             pywikibot.output(line)

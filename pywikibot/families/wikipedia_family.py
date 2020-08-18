@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Family module for Wikipedia."""
 #
-# (C) Pywikibot team, 2004-2018
+# (C) Pywikibot team, 2004-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot import family
 
 
@@ -18,184 +16,211 @@ class Family(family.SubdomainFamily, family.WikimediaFamily):
     name = 'wikipedia'
 
     closed_wikis = [
-        # See https://noc.wikimedia.org/conf/highlight.php?file=closed.dblist
-        'aa', 'advisory', 'cho', 'ho', 'hz', 'ii', 'kj', 'kr', 'mh', 'mo',
-        'mus', 'ng', 'quality', 'strategy', 'ten', 'usability'
+        # See:
+        # https://noc.wikimedia.org/conf/highlight.php?file=dblists/closed.dblist
+        'aa', 'cho', 'ho', 'hz', 'ii', 'kj', 'kr', 'mh', 'mus', 'ng', 'ten',
     ]
 
     removed_wikis = [
-        # See https://noc.wikimedia.org/conf/highlight.php?file=deleted.dblist
+        # See:
+        # https://noc.wikimedia.org/conf/highlight.php?file=dblists/deleted.dblist
         'dk', 'ru-sib', 'tlh', 'tokipona', 'zh_cn', 'zh_tw',
     ]
 
-    def __init__(self):
-        """Constructor."""
-        self.languages_by_size = [
-            'en', 'ceb', 'sv', 'de', 'fr', 'nl', 'ru', 'it', 'es', 'war', 'pl',
-            'vi', 'ja', 'pt', 'zh', 'uk', 'sr', 'fa', 'ca', 'ar', 'no', 'sh',
-            'fi', 'hu', 'id', 'ko', 'cs', 'ro', 'ms', 'tr', 'eu', 'eo', 'bg',
-            'hy', 'da', 'zh-min-nan', 'sk', 'min', 'kk', 'he', 'lt', 'hr',
-            'et', 'ce', 'sl', 'be', 'gl', 'el', 'nn', 'simple', 'az', 'uz',
-            'la', 'ur', 'hi', 'th', 'vo', 'ka', 'ta', 'cy', 'tg', 'mk', 'tl',
-            'mg', 'oc', 'lv', 'ky', 'bs', 'tt', 'new', 'sq', 'te', 'pms',
-            'zh-yue', 'br', 'be-tarask', 'azb', 'ast', 'bn', 'ml', 'ht', 'jv',
-            'lb', 'mr', 'sco', 'af', 'ga', 'pnb', 'is', 'ba', 'cv', 'fy', 'su',
-            'sw', 'my', 'lmo', 'an', 'yo', 'ne', 'pa', 'gu', 'io', 'nds',
-            'scn', 'bpy', 'als', 'bar', 'ku', 'kn', 'ckb', 'ia', 'qu', 'mn',
-            'arz', 'bat-smg', 'gd', 'wa', 'nap', 'si', 'yi', 'bug', 'am',
-            'cdo', 'or', 'map-bms', 'fo', 'mzn', 'hsb', 'xmf', 'mai', 'li',
-            'sah', 'sa', 'vec', 'ilo', 'os', 'mrj', 'hif', 'mhr', 'bh', 'eml',
-            'roa-tara', 'ps', 'diq', 'pam', 'sd', 'hak', 'nso', 'se',
-            'zh-classical', 'bcl', 'ace', 'mi', 'nah', 'nds-nl', 'szl', 'wuu',
-            'gan', 'rue', 'frr', 'vls', 'km', 'bo', 'vep', 'glk', 'sc', 'crh',
-            'fiu-vro', 'co', 'lrc', 'tk', 'kv', 'csb', 'gv', 'as', 'myv',
-            'lad', 'so', 'zea', 'nv', 'ay', 'udm', 'lez', 'ie', 'stq', 'kw',
-            'nrm', 'pcd', 'mwl', 'rm', 'koi', 'ab', 'gom', 'ug', 'lij',
-            'cbk-zam', 'gn', 'mt', 'fur', 'dsb', 'sn', 'dv', 'ang', 'ln',
-            'ext', 'kab', 'ksh', 'frp', 'lo', 'gag', 'dty', 'pag', 'pi', 'olo',
-            'av', 'xal', 'pfl', 'bxr', 'haw', 'krc', 'pap', 'kaa', 'rw', 'pdc',
-            'bjn', 'to', 'nov', 'ha', 'kl', 'arc', 'jam', 'kbd', 'tyv', 'tpi',
-            'tet', 'ig', 'ki', 'na', 'roa-rup', 'lbe', 'jbo', 'ty', 'mdf',
-            'za', 'kg', 'lg', 'wo', 'bi', 'srn', 'tcy', 'zu', 'chr', 'kbp',
-            'ltg', 'sm', 'om', 'xh', 'rmy', 'tn', 'cu', 'pih', 'rn', 'chy',
-            'tw', 'tum', 'ts', 'st', 'got', 'pnt', 'ss', 'ch', 'bm', 'fj',
-            'ady', 'iu', 'ny', 'atj', 'ee', 'ks', 'ak', 'ik', 've', 'sg', 'ff',
-            'dz', 'ti', 'cr', 'din',
-        ]
+    languages_by_size = [
+        'en', 'ceb', 'sv', 'de', 'fr', 'nl', 'ru', 'it', 'es', 'pl', 'war',
+        'vi', 'ja', 'zh', 'ar', 'arz', 'pt', 'uk', 'fa', 'ca', 'sr', 'id',
+        'no', 'ko', 'fi', 'hu', 'cs', 'sh', 'ro', 'zh-min-nan', 'eu', 'tr',
+        'ms', 'eo', 'ce', 'hy', 'he', 'bg', 'da', 'azb', 'sk', 'kk', 'min',
+        'hr', 'et', 'lt', 'be', 'el', 'az', 'simple', 'sl', 'gl', 'ur', 'nn',
+        'hi', 'ka', 'th', 'uz', 'la', 'cy', 'ta', 'tt', 'vo', 'mk', 'ast',
+        'lv', 'tg', 'zh-yue', 'mg', 'af', 'bn', 'oc', 'bs', 'sq', 'ky', 'nds',
+        'new', 'be-tarask', 'ml', 'tl', 'te', 'br', 'pms', 'su', 'sw', 'mr',
+        'ht', 'lb', 'sco', 'vec', 'jv', 'pnb', 'ga', 'ba', 'szl', 'is', 'my',
+        'fy', 'cv', 'lmo', 'wuu', 'an', 'pa', 'ne', 'yo', 'bar', 'ku', 'io',
+        'diq', 'gu', 'als', 'ckb', 'kn', 'scn', 'bpy', 'ia', 'qu', 'mn',
+        'bat-smg', 'or', 'nv', 'si', 'cdo', 'ilo', 'gd', 'am', 'yi', 'nap',
+        'bug', 'wa', 'xmf', 'sd', 'hsb', 'mai', 'map-bms', 'fo', 'mzn', 'li',
+        'sah', 'eml', 'os', 'ps', 'sa', 'frr', 'bcl', 'zh-classical', 'ace',
+        'mrj', 'mhr', 'hif', 'hak', 'roa-tara', 'avk', 'pam', 'hyw', 'km',
+        'gor', 'nso', 'rue', 'se', 'crh', 'bh', 'shn', 'vls', 'as', 'mi',
+        'nds-nl', 'nah', 'sc', 'vep', 'gan', 'myv', 'ab', 'glk', 'bo', 'co',
+        'sn', 'so', 'tk', 'fiu-vro', 'lrc', 'csb', 'kv', 'ha', 'ie', 'gv',
+        'udm', 'ay', 'pcd', 'zea', 'kab', 'nrm', 'sat', 'ug', 'lij', 'kw',
+        'lez', 'stq', 'frp', 'lfn', 'gn', 'mwl', 'gom', 'rm', 'zu', 'ban',
+        'mt', 'lo', 'lad', 'koi', 'fur', 'olo', 'dty', 'ang', 'dsb', 'bjn',
+        'ext', 'ln', 'cbk-zam', 'dv', 'ksh', 'gag', 'pfl', 'tyv', 'pag', 'pi',
+        'av', 'awa', 'haw', 'bxr', 'xal', 'krc', 'pap', 'za', 'pdc', 'kaa',
+        'rw', 'szy', 'arc', 'to', 'nov', 'jam', 'tpi', 'kbp', 'kbd', 'ig',
+        'na', 'tet', 'inh', 'wo', 'tcy', 'ki', 'jbo', 'ary', 'atj', 'roa-rup',
+        'bi', 'lbe', 'kg', 'ty', 'mdf', 'lg', 'srn', 'xh', 'gcr', 'fj', 'ltg',
+        'chr', 'sm', 'ak', 'lld', 'got', 'kl', 'om', 'pih', 'cu', 'ny', 'tn',
+        'tw', 'st', 'ts', 'nqo', 'rmy', 'bm', 'mnw', 'chy', 'rn', 'tum', 'ss',
+        'ch', 'iu', 'pnt', 'ady', 'ks', 've', 'ee', 'ik', 'ff', 'sg', 'dz',
+        'ti', 'cr', 'din',
+    ]
 
-        # Sites we want to edit but not count as real languages
-        self.test_codes = ['test', 'test2']
+    # Sites we want to edit but not count as real languages
+    test_codes = ['test', 'test2']
 
-        super(Family, self).__init__()
+    # Templates that indicate a category redirect
+    # Redirects to these templates are automatically included
+    category_redirect_templates = {
+        '_default': (),
+        'ar': ('تحويل تصنيف',),
+        'arz': ('تحويل تصنيف',),
+        'bn': ('বিষয়শ্রেণী পুনর্নির্দেশ',),
+        'bs': ('Category redirect',),
+        'cs': ('Zastaralá kategorie',),
+        'da': ('Kategoriomdirigering',),
+        'en': ('Category redirect',),
+        'es': ('Categoría redirigida',),
+        'eu': ('Kategoria birzuzendu',),
+        'fa': ('رده بهتر',),
+        'fr': ('Catégorie redirigée',),
+        'gv': ('Aastiurey ronney',),
+        'hi': ('श्रेणी अनुप्रेषित',),
+        'hu': ('Kat-redir',),
+        'id': ('Alih kategori',),
+        'ja': ('Category redirect',),
+        'ko': ('분류 넘겨주기',),
+        'mk': ('Премести категорија',),
+        'ml': ('Category redirect',),
+        'ms': ('Pengalihan kategori',),
+        'mt': ('Rindirizzament kategorija',),
+        'ne': ('श्रेणी अनुप्रेषण',),
+        'no': ('Kategoriomdirigering',),
+        'pt': ('Redirecionamento de categoria',),
+        'ro': ('Redirect categorie',),
+        'ru': ('Переименованная категория',),
+        'sco': ('Category redirect',),
+        'sh': ('Prekat',),
+        'simple': ('Category redirect',),
+        'sl': ('Preusmeritev kategorije',),
+        'sr': ('Category redirect',),
+        'sq': ('Kategori e zhvendosur',),
+        'sv': ('Kategoriomdirigering',),
+        'tl': ('Category redirect',),
+        'tr': ('Kategori yönlendirme',),
+        'uk': ('Categoryredirect',),
+        'ur': ('زمرہ رجوع مکرر',),
+        'vi': ('Đổi hướng thể loại',),
+        'yi': ('קאטעגאריע אריבערפירן',),
+        'zh': ('分类重定向',),
+        'zh-yue': ('分類彈去',),
+    }
 
-        # Templates that indicate a category redirect
-        # Redirects to these templates are automatically included
-        self.category_redirect_templates = {
-            '_default': (),
-            'ar': ('تحويل تصنيف',),
-            'arz': (u'تحويل تصنيف',),
-            'bs': ('Category redirect',),
-            'cs': (u'Zastaralá kategorie',),
-            'da': (u'Kategoriomdirigering',),
-            'en': (u'Category redirect',),
-            'es': (u'Categoría redirigida',),
-            'eu': ('Kategoria birzuzendu',),
-            'fa': ('رده بهتر',),
-            'fr': ('Catégorie redirigée',),
-            'gv': (u'Aastiurey ronney',),
-            'hi': ('श्रेणी अनुप्रेषित',),
-            'hu': ('Kat-redir',),
-            'id': ('Alih kategori',),
-            'ja': (u'Category redirect',),
-            'ko': (u'분류 넘겨주기',),
-            'mk': (u'Премести категорија',),
-            'ml': (u'Category redirect',),
-            'ms': ('Pengalihan kategori',),
-            'mt': ('Rindirizzament kategorija',),
-            'no': ('Kategoriomdirigering',),
-            'pt': ('Redirecionamento de categoria',),
-            'ro': (u'Redirect categorie',),
-            'ru': ('Переименованная категория',),
-            'sco': ('Category redirect',),
-            'sh': ('Prekat',),
-            'simple': ('Category redirect',),
-            'sl': ('Preusmeritev kategorije',),
-            'sr': ('Category redirect',),
-            'sq': ('Kategori e zhvendosur',),
-            'sv': ('Kategoriomdirigering',),
-            'tl': (u'Category redirect',),
-            'tr': ('Kategori yönlendirme',),
-            'uk': (u'Categoryredirect',),
-            'vi': ('Đổi hướng thể loại',),
-            'yi': (u'קאטעגאריע אריבערפירן',),
-            'zh': ('分类重定向',),
-            'zh-yue': ('分類彈去',),
-        }
+    # families that redirect their interlanguage links here.
+    interwiki_forwarded_from = [
+        'commons',
+        'incubator',
+        'mediawiki',
+        'meta',
+        'outreach',
+        'species',
+        'test',
+        'wikimania'
+    ]
 
-        # families that redirect their interlanguage links here.
-        self.interwiki_forwarded_from = [
-            'commons',
-            'incubator',
-            'meta',
-            'species',
-            'strategy',
-            'test',
-            'wikimania'
-        ]
+    # Global bot allowed languages on
+    # https://meta.wikimedia.org/wiki/BPI#Current_implementation
+    # & https://meta.wikimedia.org/wiki/Special:WikiSets/2
+    cross_allowed = [
+        'ab', 'ace', 'ady', 'af', 'ak', 'als', 'am', 'an', 'ang', 'ar', 'arc',
+        'arz', 'as', 'ast', 'atj', 'av', 'ay', 'az', 'ba', 'bar', 'bat-smg',
+        'bcl', 'be', 'be-tarask', 'bg', 'bh', 'bi', 'bjn', 'bm', 'bo', 'bpy',
+        'bug', 'bxr', 'ca', 'cbk-zam', 'cdo', 'ce', 'ceb', 'ch', 'chr', 'chy',
+        'ckb', 'co', 'cr', 'crh', 'cs', 'csb', 'cu', 'cv', 'cy', 'da', 'diq',
+        'dsb', 'dty', 'dz', 'ee', 'el', 'eml', 'en', 'eo', 'et', 'eu', 'ext',
+        'fa', 'ff', 'fi', 'fj', 'fo', 'frp', 'frr', 'fur', 'ga', 'gag', 'gan',
+        'gd', 'glk', 'gn', 'gom', 'gor', 'got', 'gu', 'gv', 'ha', 'hak', 'haw',
+        'he', 'hi', 'hif', 'hr', 'hsb', 'ht', 'hu', 'hy', 'ia', 'ie', 'ig',
+        'ik', 'ilo', 'inh', 'io', 'iu', 'ja', 'jam', 'jbo', 'jv', 'ka', 'kaa',
+        'kab', 'kbd', 'kg', 'ki', 'kk', 'kl', 'km', 'kn', 'ko', 'koi', 'krc',
+        'ks', 'ku', 'kv', 'kw', 'ky', 'la', 'lad', 'lb', 'lbe', 'lez', 'lfn',
+        'lg', 'li', 'lij', 'lmo', 'ln', 'lo', 'lt', 'ltg', 'lv', 'map-bms',
+        'mdf', 'meta', 'mg', 'mhr', 'mi', 'mk', 'ml', 'mn', 'mrj', 'ms', 'mwl',
+        'my', 'myv', 'mzn', 'na', 'nah', 'nap', 'nds-nl', 'ne', 'new', 'nl',
+        'no', 'nov', 'nrm', 'nso', 'nv', 'ny', 'oc', 'olo', 'om', 'or', 'os',
+        'pa', 'pag', 'pam', 'pap', 'pdc', 'pfl', 'pi', 'pih', 'pms', 'pnb',
+        'pnt', 'ps', 'qu', 'rm', 'rmy', 'rn', 'roa-rup', 'roa-tara', 'ru',
+        'rue', 'rw', 'sa', 'sah', 'sc', 'scn', 'sco', 'sd', 'se', 'sg', 'sh',
+        'shn', 'si', 'simple', 'sk', 'sm', 'sn', 'so', 'srn', 'ss', 'st',
+        'stq', 'su', 'sv', 'sw', 'szl', 'ta', 'tcy', 'te', 'tet', 'tg', 'th',
+        'ti', 'tk', 'tl', 'tn', 'to', 'tpi', 'tr', 'ts', 'tt', 'tum', 'tw',
+        'ty', 'tyv', 'udm', 'ug', 'uz', 've', 'vec', 'vep', 'vls', 'vo', 'wa',
+        'war', 'wo', 'xal', 'xh', 'xmf', 'yi', 'yo', 'za', 'zea', 'zh',
+        'zh-classical', 'zh-min-nan', 'zh-yue', 'zu',
+    ]
 
-        # Global bot allowed languages on
-        # https://meta.wikimedia.org/wiki/BPI#Current_implementation
-        # & https://meta.wikimedia.org/wiki/Special:WikiSets/2
-        self.cross_allowed = [
-            'ab', 'ace', 'ady', 'af', 'ak', 'als', 'am', 'an', 'ang', 'ar',
-            'arc', 'arz', 'as', 'ast', 'av', 'ay', 'az', 'ba', 'bar',
-            'bat-smg', 'bcl', 'be', 'be-tarask', 'bg', 'bh', 'bi', 'bjn', 'bm',
-            'bo', 'bpy', 'bug', 'bxr', 'ca', 'cbk-zam', 'cdo', 'ce', 'ceb',
-            'ch', 'chr', 'chy', 'ckb', 'co', 'cr', 'crh', 'cs', 'csb', 'cu',
-            'cv', 'cy', 'da', 'diq', 'dsb', 'dz', 'ee', 'el', 'eml', 'en',
-            'eo', 'et', 'eu', 'ext', 'fa', 'ff', 'fi', 'fj', 'fo', 'frp',
-            'frr', 'fur', 'ga', 'gag', 'gan', 'gd', 'glk', 'gn', 'got', 'gu',
-            'gv', 'ha', 'hak', 'haw', 'he', 'hi', 'hif', 'hr', 'hsb', 'ht',
-            'hu', 'hy', 'ia', 'ie', 'ig', 'ik', 'ilo', 'io', 'iu', 'ja', 'jam',
-            'jbo', 'jv', 'ka', 'kaa', 'kab', 'kdb', 'kg', 'ki', 'kk', 'kl',
-            'km', 'kn', 'ko', 'koi', 'krc', 'ks', 'ku', 'kv', 'kw', 'ky', 'la',
-            'lad', 'lb', 'lbe', 'lez', 'lg', 'li', 'lij', 'lmo', 'ln', 'lo',
-            'lt', 'ltg', 'lv', 'map-bms', 'mdf', 'mg', 'mhr', 'mi', 'mk', 'ml',
-            'mn', 'mrj', 'ms', 'mwl', 'my', 'myv', 'mzn', 'na', 'nah', 'nap',
-            'nds-nl', 'ne', 'new', 'nl', 'no', 'nov', 'nrm', 'nso', 'nv', 'ny',
-            'oc', 'olo', 'om', 'or', 'os', 'pa', 'pag', 'pam', 'pap', 'pdc',
-            'pfl', 'pi', 'pih', 'pms', 'pnb', 'pnt', 'ps', 'qu', 'rm', 'rmy',
-            'rn', 'roa-rup', 'roa-tara', 'ru', 'rue', 'rw', 'sa', 'sah', 'sc',
-            'scn', 'sco', 'sd', 'se', 'sg', 'sh', 'si', 'simple', 'sk', 'sm',
-            'sn', 'so', 'srn', 'ss', 'st', 'stq', 'su', 'sv', 'sw', 'szl',
-            'ta', 'tcy', 'te', 'tet', 'tg', 'th', 'ti', 'tk', 'tl', 'tn', 'to',
-            'tpi', 'tr', 'ts', 'tt', 'tum', 'tw', 'ty', 'tyv', 'udm', 'ug',
-            'uz', 've', 'vec', 'vep', 'vls', 'vo', 'wa', 'war', 'wo', 'wuu',
-            'xal', 'xh', 'xmf', 'yi', 'yo', 'za', 'zea', 'zh', 'zh-classical',
-            'zh-min-nan', 'zh-yue', 'zu',
-        ]
+    # On most Wikipedias page names must start with a capital letter,
+    # but some languages don't use this.
+    nocapitalize = ['jbo']
 
-        # On most Wikipedias page names must start with a capital letter,
-        # but some languages don't use this.
-        self.nocapitalize = ['jbo']
+    # Languages that used to be coded in iso-8859-1
+    latin1old = {
+        'af', 'bs', 'co', 'cs', 'da', 'de', 'en', 'es', 'es', 'et', 'eu', 'fi',
+        'fr', 'fy', 'ga', 'gl', 'ia', 'id', 'it', 'la', 'lt', 'lv', 'mi', 'mr',
+        'na', 'nds', 'nl', 'no', 'pt', 'simple', 'sl', 'sv', 'sw', 'test',
+        'tt', 'uk', 'vi', 'vo'
+    }
 
-        # Languages that used to be coded in iso-8859-1
-        self.latin1old = [
-            'de', 'en', 'et', 'es', 'ia', 'la', 'af', 'cs', 'fr', 'pt', 'sl',
-            'bs', 'fy', 'vi', 'lt', 'fi', 'it', 'no', 'simple', 'gl', 'eu',
-            'nds', 'co', 'mi', 'mr', 'id', 'lv', 'sw', 'tt', 'uk', 'vo', 'ga',
-            'na', 'es', 'nl', 'da', 'dk', 'sv', 'test']
+    # Subpages for documentation.
+    # TODO: List is incomplete, to be completed for missing languages.
+    # TODO: Remove comments for appropriate pages
+    doc_subpages = {
+        '_default': (('/doc', ),
+                     ['ar', 'bn', 'cs', 'da', 'en', 'es', 'hr', 'hu', 'id',
+                      'ilo', 'ja', 'ms', 'pt', 'ro', 'ru', 'simple', 'sh',
+                      'vi', 'zh']
+                     ),
+        'bs': ('/dok', ),
+        'ca': ('/ús', ),
+        'de': ('Doku', '/Meta'),
+        'dsb': ('/Dokumentacija', ),
+        'eu': ('txantiloi dokumentazioa', '/dok'),
+        'fa': ('/doc', '/توضیحات'),
+        # fi: no idea how to handle this type of subpage at :Metasivu:
+        'fi': ((), ),
+        'fr': ('/Documentation',),
+        'hsb': ('/Dokumentacija', ),
+        'it': ('/Man', ),
+        'ka': ('/ინფო', ),
+        'ko': ('/설명문서', ),
+        'no': ('/dok', ),
+        'nn': ('/dok', ),
+        'pl': ('/opis', ),
+        'sk': ('/Dokumentácia', ),
+        'sr': ('/док', ),
+        'sv': ('/dok', ),
+        'uk': ('/Документація', ),
+        'ur': ('/doc', '/دستاویز'),
+    }
 
-        # Subpages for documentation.
-        # TODO: List is incomplete, to be completed for missing languages.
-        # TODO: Remove comments for appropriate pages
-        self.doc_subpages = {
-            '_default': ((u'/doc', ),
-                         ['ar', 'bn', 'cs', 'da', 'en', 'es', 'hr',
-                          'hu', 'id', 'ilo', 'ja', 'ms',
-                          'pt', 'ro', 'ru', 'simple', 'sh', 'vi', 'zh']
-                         ),
-            'bs': ('/dok', ),
-            'ca': (u'/ús', ),
-            'de': (u'Doku', u'/Meta'),
-            'dsb': (u'/Dokumentacija', ),
-            'eu': (u'txantiloi dokumentazioa', u'/dok'),
-            'fa': (u'/doc', u'/توضیحات'),
-            # fi: no idea how to handle this type of subpage at :Metasivu:
-            'fi': ((), ),
-            'fr': (u'/documentation', ),
-            'hsb': (u'/Dokumentacija', ),
-            'it': (u'/Man', ),
-            'ka': (u'/ინფო', ),
-            'ko': (u'/설명문서', ),
-            'no': (u'/dok', ),
-            'nn': (u'/dok', ),
-            'pl': (u'/opis', ),
-            'sk': (u'/Dokumentácia', ),
-            'sr': ('/док', ),
-            'sv': (u'/dok', ),
-            'uk': (u'/Документація', ),
-        }
+    # Templates that indicate an edit should be avoided
+    edit_restricted_templates = {
+        'ar': ('تحرر',),
+        'bs': ('Izmjena u toku',),
+        'cs': ('Pracuje se',),
+        'de': ('Inuse', 'In use', 'In bearbeitung', 'Inbearbeitung',),
+        'en': ('Inuse', 'In use'),
+        'fa': ('ویرایش',),
+        'fr': ('En cours',),
+        'he': ('בעבודה',),
+        'hr': ('Radovi',),
+        'sr': ('Радови у току', 'Рут',),
+        'ur': ('زیر ترمیم',),
+        'zh': ('Inuse',),
+    }
+
+    # Archive templates that indicate an edit of non-archive bots
+    # should be avoided
+    archived_page_templates = {
+        'cs': ('Archiv', 'Archiv Wikipedie', 'Archiv diskuse',
+               'Archivace start', 'Posloupnost archivů', 'Rfa-archiv-start',
+               'Rfc-archiv-start',),
+        'de': ('Archiv',),
+    }
 
     def get_known_families(self, site):
         """Override the family interwiki prefixes for each site."""
@@ -209,7 +234,7 @@ class Family(family.SubdomainFamily, family.WikimediaFamily):
         else:
             return self.known_families
 
-    def code2encodings(self, code):
+    def encodings(self, code):
         """Return a list of historical encodings for a specific site."""
         # Historic compatibility
         if code == 'pl':
@@ -218,4 +243,4 @@ class Family(family.SubdomainFamily, family.WikimediaFamily):
             return 'utf-8', 'iso8859-5'
         if code in self.latin1old:
             return 'utf-8', 'iso-8859-1'
-        return self.code2encoding(code)
+        return super().encodings(code)

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Test cosmetic_changes module."""
 #
-# (C) Pywikibot team, 2015-2017
+# (C) Pywikibot team, 2015-2018
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 from pywikibot.cosmetic_changes import CosmeticChangesToolkit
 
@@ -49,12 +49,26 @@ class TestDryCosmeticChanges(TestCosmeticChanges):
         self.assertEqual('Foo\n{{any template}}\n\n[[Category:Foo]]',
                          self.cct.standardizePageFooter(
                              'Foo\n[[category:foo]]\n{{any template}}'))
+        self.assertEqual('Foo\n\n[[Category:Test| ]]\n[[Category:Baz]]',
+                         self.cct.standardizePageFooter(
+                             'Foo\n\n[[category:baz]]\n[[category:test]]'))
+        self.assertEqual('Foo\n\n[[Category:Foo]]\n\n{{Personendaten}}',
+                         self.cct.standardizePageFooter(
+                             'Foo\n[[category:foo]]\n{{Personendaten}}'))
 
     def test_resolveHtmlEntities(self):
         """Test resolveHtmlEntities method."""
         self.assertEqual(
             '&amp;#&nbsp;# #0#&#62;#x',
-            self.cct.resolveHtmlEntities('&amp;#&nbsp;#&#32;#&#48;#&#62;#&#120;'))
+            self.cct.resolveHtmlEntities(
+                '&amp;#&nbsp;#&#32;#&#48;#&#62;#&#120;'))
+        self.assertEqual(
+            '<syntaxhighlight>&#32;</syntaxhighlight>',
+            self.cct.resolveHtmlEntities(
+                '<syntaxhighlight>&#32;</syntaxhighlight>'))
+        self.assertEqual(
+            '<!-- &ndash; -->',
+            self.cct.resolveHtmlEntities('<!-- &ndash; -->'))
 
     def test_removeUselessSpaces(self):
         """Test removeUselessSpaces method."""
@@ -72,7 +86,7 @@ class TestDryCosmeticChanges(TestCosmeticChanges):
                          self.cct.removeUselessSpaces(' Foo  bar '))
         # tab
         self.assertEqual('Fooooo bar',
-                         self.cct.removeUselessSpaces('Fooooo bar	'))
+                         self.cct.removeUselessSpaces('Fooooo bar\t'))
 
     def test_removeNonBreakingSpaceBeforePercent(self):
         """Test removeNonBreakingSpaceBeforePercent method."""
@@ -83,6 +97,12 @@ class TestDryCosmeticChanges(TestCosmeticChanges):
         """Test cleanUpSectionHeaders method."""
         self.assertEqual('=== Header ===\n',
                          self.cct.cleanUpSectionHeaders('===Header===\n'))
+        # tab
+        self.assertEqual('=== Header ===\n',
+                         self.cct.cleanUpSectionHeaders('===Header===\t\n'))
+        # tabs inside
+        self.assertEqual('=== Header ===\n',
+                         self.cct.cleanUpSectionHeaders('===\tHeader\t===\n'))
 
     def test_putSpacesInLists(self):
         """Test putSpacesInLists method."""
@@ -198,13 +218,17 @@ class TestDryCosmeticChanges(TestCosmeticChanges):
             '[[:Datei:Example.svg|Description]]\n',
             self.cct.fixSyntaxSave(
                 '[https://de.wikipedia.org/wiki/Kategorie:Example]\n'
-                '[https://de.wikipedia.org/wiki/Category:Example Description]\n'
+                '[https://de.wikipedia.org/wiki/Category:Example '
+                'Description]\n'
                 '[https://de.wikipedia.org/wiki/Datei:Example.svg]\n'
-                '[https://de.wikipedia.org/wiki/File:Example.svg Description]\n'
+                '[https://de.wikipedia.org/wiki/File:Example.svg '
+                'Description]\n'
                 '[[https://de.wikipedia.org/wiki/Category:Example]]\n'
-                '[[https://de.wikipedia.org/wiki/Kategorie:Example Description]]\n'
+                '[[https://de.wikipedia.org/wiki/Kategorie:Example '
+                'Description]]\n'
                 '[[https://de.wikipedia.org/wiki/File:Example.svg]]\n'
-                '[[https://de.wikipedia.org/wiki/Datei:Example.svg Description]]\n'
+                '[[https://de.wikipedia.org/wiki/Datei:Example.svg '
+                'Description]]\n'
             ))
         del self.cct.site._namespaces
 
@@ -253,6 +277,95 @@ class TestDryCosmeticChanges(TestCosmeticChanges):
 class TestLiveCosmeticChanges(TestCosmeticChanges):
 
     """Test cosmetic_changes requiring a live wiki."""
+
+    def test_removeEmptySections(self):
+        """Test removeEmptySections method."""
+        content = '\nSome content'
+        # same level
+        self.assertEqual(
+            '\n==Bar==' + content,
+            self.cct.removeEmptySections('\n== Foo ==\n\n==Bar==' + content))
+        # different level
+        self.assertEqual(
+            '\n==Bar==' + content,
+            self.cct.removeEmptySections('\n===Foo===\n\n==Bar==' + content))
+        testcase = '\n==Foo==\n\n===Bar===' + content
+        self.assertEqual(testcase, self.cct.removeEmptySections(testcase))
+        # multiple empty sections
+        self.assertEqual(
+            '\n==Baz==' + content,
+            self.cct.removeEmptySections('\n==Foo==\n==Bar==\n==Baz=='
+                                         + content))
+        # comment inside
+        self.assertEqual(
+            '\n==Bar==' + content,
+            self.cct.removeEmptySections('\n==Foo==\n<!-- Baz -->\n==Bar=='
+                                         + content))
+        # comments and content between
+        testcase = ('\n== Foo ==\n<!-- Baz -->\nBaz\n<!-- Foo -->\n== Bar =='
+                    + content)
+        self.assertEqual(testcase, self.cct.removeEmptySections(testcase))
+        # inside comment
+        testcase = '<!--\n==Foo==\n\n==Bar==\n-->' + content
+        self.assertEqual(testcase, self.cct.removeEmptySections(testcase))
+        testcase = '\n==Foo==\n<!--\n==Bar==\n-->' + content
+        self.assertEqual(testcase, self.cct.removeEmptySections(testcase))
+        testcase = '<!--\n==Foo==\n-->\n==Bar==' + content
+        self.assertEqual(testcase, self.cct.removeEmptySections(testcase))
+        # empty list item
+        self.assertEqual(
+            '\n==Baz==' + content,
+            self.cct.removeEmptySections('\n==Foo==\n*\n==Bar==\n#\n==Baz=='
+                                         + content))
+        self.assertEqual(
+            '\n==Baz==' + content,
+            self.cct.removeEmptySections('\n==Foo==\n* <!--item-->\n==Baz=='
+                                         + content))
+        testcase = '\n==Foo==\n* item\n==Bar==' + content
+        self.assertEqual(testcase, self.cct.removeEmptySections(testcase))
+        # empty first section
+        self.assertEqual(
+            '==Bar==' + content,
+            self.cct.removeEmptySections('==Foo==\n==Bar==' + content))
+        # empty last section
+        self.assertEqual(
+            '\n[[Category:Baz]]',
+            self.cct.removeEmptySections('\n==Bar==\n[[Category:Baz]]'))
+        # complicated
+        self.assertEqual(
+            '\n[[Category:Baz]]',
+            self.cct.removeEmptySections('\n==Bar==\n* <!--item-->'
+                                         '\n[[Category:Baz]]'))
+        self.assertEqual(
+            '\n[[cs:Foo]]\n[[Category:Baz]]',
+            self.cct.removeEmptySections('\n==Bar==\n[[cs:Foo]]'
+                                         '\n[[Category:Baz]]'))
+
+    def test_remove_empty_sections_interlanguage_links(self):
+        """Test removeEmptySections with edge cases of language links."""
+        # When removing language links, do not remove the \n after them,
+        # otherwise the sections won't be detected correctly.
+        text = 'text [[:en:link]]\n=== title1 ===\ncontent1'
+        self.assertEqual(text, self.cct.removeEmptySections(text))
+        self.assertEqual(
+            't [[en:link]]\n=== 1 ===\nc',
+            self.cct.removeEmptySections('t [[en:link]]\n=== 1 ===\nc'))
+        # Treat sections that only contain language links as empty sections.
+        self.assertEqual(
+            't\n[[en:link]]',
+            self.cct.removeEmptySections('t\n=== 1 ===\n[[en:link]]'))
+
+    def test_remove_empty_sections_with_heading_comments(self):
+        """Test removeEmptySections with comments in the section headings."""
+        self.assertEqual(
+            '==2==<!--c--> <!--\n-->\nt',
+            self.cct.removeEmptySections('==1==\n==2==<!--c--> <!--\n-->\nt'))
+        self.assertEqual(
+            '==2== <!--c-->\nt',
+            self.cct.removeEmptySections('==1==\n==2== <!--c-->\nt'))
+        self.assertEqual(
+            '==2<!--\n-->==\nt',
+            self.cct.removeEmptySections('==1==\n==2<!--\n-->==\nt'))
 
     def test_translateAndCapitalizeNamespaces(self):
         """Test translateAndCapitalizeNamespaces method."""
@@ -334,8 +447,8 @@ class TestLiveCosmeticChanges(TestCosmeticChanges):
         """
         Test cleanUpLinks method.
 
-        This method fails for the given samples from library. Either the method
-        has to be changed or the examples must be fixed.
+        This method fails for the given samples from library. Either
+        the method has to be changed or the examples must be fixed.
         """
         self.assertEqual('text [[title]] text',
                          self.cct.cleanUpLinks('text[[ title ]]text'))
@@ -350,8 +463,9 @@ class TestLiveCosmeticChanges(TestCosmeticChanges):
         """Test replaceDeprecatedTemplates method."""
         self.assertEqual('{{Belege fehlen}}',
                          self.cct.replaceDeprecatedTemplates('{{Belege}}'))
-        self.assertEqual('{{Belege fehlen|Test}}',
-                         self.cct.replaceDeprecatedTemplates('{{Quelle|Test}}'))
+        self.assertEqual(
+            '{{Belege fehlen|Test}}',
+            self.cct.replaceDeprecatedTemplates('{{Quelle|Test}}'))
 
 
 class TestCosmeticChangesPersian(TestCosmeticChanges):

@@ -19,8 +19,6 @@ write him in German and English.
 
 Command line options:
 
-&params;
-
 -always      Skip the GUI validation
 
 -setcat:     Set the category of the copied image
@@ -29,63 +27,59 @@ Command line options:
              only work if the user has sysops privileges, otherwise the image
              will only be marked for deletion.
 
+&params;
+
 Examples
+--------
 
-Work on a single image::
+Work on a single image:
 
- python pwb.py imagecopy.py -page:Image:<imagename>
+    python pwb.py imagecopy -page:Image:<imagename>
 
-Work on the 100 newest images::
+Work on the 100 newest images:
 
- python pwb.py imagecopy.py -newimages:100
+    python pwb.py imagecopy -newimages:100
 
-Work on all images in a category:<cat>::
+Work on all images in a category:<cat>:
 
- python pwb.py imagecopy.py -cat:<cat>
+    python pwb.py imagecopy -cat:<cat>
 
-Work on all images which transclude a template::
+Work on all images which transclude a template:
 
- python pwb.py imagecopy.py -transcludes:<template>
+    python pwb.py imagecopy -transcludes:<template>
 
 Work on a single image and deletes the image when the transfer is complete
 (only works if the user has sysops privilege, otherwise it will be marked for
-deletion)::
+deletion):
 
- python pwb.py imagecopy.py -page:Image:<imagename> -delete
+    python pwb.py imagecopy -page:Image:<imagename> -delete
 
 By default the bot works on your home wiki (set in user-config)
 """
-# Based on upload.py by:
-# (C) Rob W.W. Hooft, Andre Engels 2003-2007
-# (C) Wikipedian, Keichwa, Leogregianin, Rikwade, Misza13 2003-2007
 #
-# New bot by:
-# (C) Kyle/Orgullomoore, Siebrand Mazeland 2007-2008
-#
-# Another rewrite by:
-# (C) Multichill 2008-2011
-# (C) Pywikibot team, 2007-2018
+# (C) Pywikibot team, 2003-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import codecs
 import re
 import threading
 import webbrowser
 
-import pywikibot
+from os import path
 
 from requests.exceptions import RequestException
 
-from pywikibot import pagegenerators, config, i18n
+import pywikibot
 
+from pywikibot import config, i18n, pagegenerators
 from pywikibot.comms.http import fetch
-
 from pywikibot.specialbots import UploadRobot
+from pywikibot.tools import remove_last_args
 
-from scripts import image
+from scripts.image import ImageRobot
 
 try:
     from pywikibot.userinterfaces.gui import Tkdialog, Tkinter
@@ -100,113 +94,113 @@ docuReplacements = {
 }
 
 nowCommonsTemplate = {
-    '_default': u'{{NowCommons|%s}}',
-    'af': u'{{NowCommons|File:%s}}',
-    'als': u'{{NowCommons|%s}}',
-    'am': u'{{NowCommons|File:%s}}',
-    'ang': u'{{NowCommons|File:%s}}',
-    'ar': u'{{الآن كومنز|%s}}',
-    'ast': u'{{EnCommons|File:%s}}',
-    'az': u'{{NowCommons|%s}}',
-    'bar': u'{{NowCommons|%s}}',
-    'bg': u'{{NowCommons|%s}}',
-    'bn': u'{{NowCommons|File:%s}}',
-    'bs': u'{{NowCommons|%s}}',
-    'ca': u'{{AraCommons|%s}}',
-    'cs': u'{{NowCommons|%s}}',
-    'cy': u'{{NowCommons|File:%s}}',
-    'da': u'{{NowCommons|File:%s}}',
-    'de': u'{{NowCommons|%s}}',
-    'dsb': u'{{NowCommons|%s}}',
-    'el': u'{{NowCommons|%s}}',
-    'en': u'{{subst:ncd|%s}}',
-    'eo': u'{{Nun en komunejo|%s}}',
-    'es': u'{{EnCommons|File:%s}}',
-    'et': u'{{NüüdCommonsis|File:%s}}',
-    'fa': u'{{NowCommons|%s}}',
-    'fi': u'{{NowCommons|%s}}',
-    'fo': u'{{NowCommons|File:%s}}',
-    'fr': u'{{Image sur Commons|%s}}',
-    'fy': u'{{NowCommons|%s}}',
-    'ga': u'{{Ag Cómhaoin|File:%s}}',
-    'gl': u'{{EnCommons]|File:%s}}',
-    'gv': u'{{NowCommons|File:%s}}',
-    'he': u'{{גם בוויקישיתוף|%s}}',
-    'hr': u'{{NowCommons|%s}}',
-    'hsb': u'{{NowCommons|%s}}',
-    'hu': u'{{Azonnali-commons|%s}}',
-    'ia': u'{{NowCommons|File:%s}}',
-    'id': u'{{NowCommons|File:%s}}',
-    'ilo': u'{{NowCommons|File:%s}}',
-    'io': u'{{NowCommons|%s}}',
-    'is': u'{{NowCommons|%s}}',
-    'it': u'{{NowCommons|%s}}',
-    'ja': u'{{NowCommons|File:%s}}',
-    'jv': u'{{NowCommons|File:%s}}',
-    'ka': u'{{NowCommons|File:%s}}',
-    'kn': u'{{NowCommons|File:%s}}',
-    'ko': u'{{NowCommons|File:%s}}',
-    'ku': u'{{NowCommons|%s}}',
-    'lb': u'{{Elo op Commons|%s}}',
-    'li': u'{{NowCommons|%s}}',
-    'lt': u'{{NowCommons|File:%s}}',
-    'lv': u'{{NowCommons|File:%s}}',
-    'mk': u'{{NowCommons|File:%s}}',
-    'mn': u'{{NowCommons|File:%s}}',
-    'ms': u'{{NowCommons|%s}}',
-    'nds-nl': u'{{NoenCommons|File:%s}}',
-    'nl': u'{{NuCommons|%s}}',
-    'nn': u'{{No på Commons|File:%s}}',
-    'no': u'{{NowCommons|%s}}',
-    'oc': u'{{NowCommons|File:%s}}',
-    'pl': u'{{NowCommons|%s}}',
-    'pt': u'{{NowCommons|%s}}',
-    'ro': u'{{AcumCommons|File:%s}}',
-    'ru': u'{{Перенесено на Викисклад|%s}}',
-    'sa': u'{{NowCommons|File:%s}}',
-    'scn': u'{{NowCommons|File:%s}}',
-    'sh': u'{{NowCommons|File:%s}}',
-    'sk': u'{{NowCommons|File:%s}}',
-    'sl': u'{{OdslejZbirka|%s}}',
-    'sq': u'{{NowCommons|File:%s}}',
-    'sr': u'{{NowCommons|File:%s}}',
-    'st': u'{{NowCommons|File:%s}}',
-    'su': u'{{IlaharKiwari|File:%s}}',
-    'sv': u'{{NowCommons|%s}}',
-    'sw': u'{{NowCommons|%s}}',
-    'ta': u'{{NowCommons|File:%s}}',
-    'th': u'{{มีที่คอมมอนส์|File:%s}}',
-    'tl': u'{{NasaCommons|File:%s}}',
-    'tr': u'{{NowCommons|%s}}',
-    'uk': u'{{NowCommons|File:%s}}',
-    'ur': u'{{NowCommons|File:%s}}',
-    'vec': u'{{NowCommons|%s}}',
-    'vi': u'{{NowCommons|File:%s}}',
-    'vo': u'{{InKobädikos|%s}}',
-    'wa': u'{{NowCommons|%s}}',
-    'zh': u'{{NowCommons|File:%s}}',
-    'zh-min-nan': u'{{Commons ū|%s}}',
-    'zh-yue': u'{{subst:Ncd|File:%s}}',
+    '_default': '{{NowCommons|%s}}',
+    'af': '{{NowCommons|File:%s}}',
+    'als': '{{NowCommons|%s}}',
+    'am': '{{NowCommons|File:%s}}',
+    'ang': '{{NowCommons|File:%s}}',
+    'ar': '{{الآن كومنز|%s}}',
+    'ast': '{{EnCommons|File:%s}}',
+    'az': '{{NowCommons|%s}}',
+    'bar': '{{NowCommons|%s}}',
+    'bg': '{{NowCommons|%s}}',
+    'bn': '{{NowCommons|File:%s}}',
+    'bs': '{{NowCommons|%s}}',
+    'ca': '{{AraCommons|%s}}',
+    'cs': '{{NowCommons|%s}}',
+    'cy': '{{NowCommons|File:%s}}',
+    'da': '{{NowCommons|File:%s}}',
+    'de': '{{NowCommons|%s}}',
+    'dsb': '{{NowCommons|%s}}',
+    'el': '{{NowCommons|%s}}',
+    'en': '{{subst:ncd|%s}}',
+    'eo': '{{Nun en komunejo|%s}}',
+    'es': '{{EnCommons|File:%s}}',
+    'et': '{{NüüdCommonsis|File:%s}}',
+    'fa': '{{NowCommons|%s}}',
+    'fi': '{{NowCommons|%s}}',
+    'fo': '{{NowCommons|File:%s}}',
+    'fr': '{{Image sur Commons|%s}}',
+    'fy': '{{NowCommons|%s}}',
+    'ga': '{{Ag Cómhaoin|File:%s}}',
+    'gl': '{{EnCommons]|File:%s}}',
+    'gv': '{{NowCommons|File:%s}}',
+    'he': '{{גם בוויקישיתוף|%s}}',
+    'hr': '{{NowCommons|%s}}',
+    'hsb': '{{NowCommons|%s}}',
+    'hu': '{{Azonnali-commons|%s}}',
+    'ia': '{{NowCommons|File:%s}}',
+    'id': '{{NowCommons|File:%s}}',
+    'ilo': '{{NowCommons|File:%s}}',
+    'io': '{{NowCommons|%s}}',
+    'is': '{{NowCommons|%s}}',
+    'it': '{{NowCommons|%s}}',
+    'ja': '{{NowCommons|File:%s}}',
+    'jv': '{{NowCommons|File:%s}}',
+    'ka': '{{NowCommons|File:%s}}',
+    'kn': '{{NowCommons|File:%s}}',
+    'ko': '{{NowCommons|File:%s}}',
+    'ku': '{{NowCommons|%s}}',
+    'lb': '{{Elo op Commons|%s}}',
+    'li': '{{NowCommons|%s}}',
+    'lt': '{{NowCommons|File:%s}}',
+    'lv': '{{NowCommons|File:%s}}',
+    'mk': '{{NowCommons|File:%s}}',
+    'mn': '{{NowCommons|File:%s}}',
+    'ms': '{{NowCommons|%s}}',
+    'nds-nl': '{{NoenCommons|File:%s}}',
+    'nl': '{{NuCommons|%s}}',
+    'nn': '{{No på Commons|File:%s}}',
+    'no': '{{NowCommons|%s}}',
+    'oc': '{{NowCommons|File:%s}}',
+    'pl': '{{NowCommons|%s}}',
+    'pt': '{{NowCommons|%s}}',
+    'ro': '{{AcumCommons|File:%s}}',
+    'ru': '{{Перенесено на Викисклад|%s}}',
+    'sa': '{{NowCommons|File:%s}}',
+    'scn': '{{NowCommons|File:%s}}',
+    'sh': '{{NowCommons|File:%s}}',
+    'sk': '{{NowCommons|File:%s}}',
+    'sl': '{{OdslejZbirka|%s}}',
+    'sq': '{{NowCommons|File:%s}}',
+    'sr': '{{NowCommons|File:%s}}',
+    'st': '{{NowCommons|File:%s}}',
+    'su': '{{IlaharKiwari|File:%s}}',
+    'sv': '{{NowCommons|%s}}',
+    'sw': '{{NowCommons|%s}}',
+    'ta': '{{NowCommons|File:%s}}',
+    'th': '{{มีที่คอมมอนส์|File:%s}}',
+    'tl': '{{NasaCommons|File:%s}}',
+    'tr': '{{NowCommons|%s}}',
+    'uk': '{{NowCommons|File:%s}}',
+    'ur': '{{NowCommons|File:%s}}',
+    'vec': '{{NowCommons|%s}}',
+    'vi': '{{NowCommons|File:%s}}',
+    'vo': '{{InKobädikos|%s}}',
+    'wa': '{{NowCommons|%s}}',
+    'zh': '{{NowCommons|File:%s}}',
+    'zh-min-nan': '{{Commons ū|%s}}',
+    'zh-yue': '{{subst:Ncd|File:%s}}',
 }
 
 moveToCommonsTemplate = {
-    'ar': [u'نقل إلى كومنز'],
-    'en': [u'Commons ok', u'Copy to Wikimedia Commons', u'Move to commons',
-           u'Movetocommons', u'To commons',
-           u'Copy to Wikimedia Commons by BotMultichill'],
-    'fi': [u'Commonsiin'],
-    'fr': [u'Image pour Commons'],
-    'hsb': [u'Kopěruj do Wikimedia Commons'],
-    'hu': [u'Commonsba'],
-    'is': [u'Færa á Commons'],
-    'ms': [u'Hantar ke Wikimedia Commons'],
-    'nl': [u'Verplaats naar Wikimedia Commons', u'VNC'],
-    'pl': [u'Do Commons', u'NaCommons', u'Na Commons'],
-    'ru': [u'На Викисклад'],
-    'sl': [u'Skopiraj v Zbirko'],
-    'sr': [u'За оставу'],
-    'sv': [u'Till Commons'],
-    'zh': [u'Copy to Wikimedia Commons'],
+    'ar': ['نقل إلى كومنز'],
+    'en': ['Commons ok', 'Copy to Wikimedia Commons', 'Move to commons',
+           'Movetocommons', 'To commons',
+           'Copy to Wikimedia Commons by BotMultichill'],
+    'fi': ['Commonsiin'],
+    'fr': ['Image pour Commons'],
+    'hsb': ['Kopěruj do Wikimedia Commons'],
+    'hu': ['Commonsba'],
+    'is': ['Færa á Commons'],
+    'ms': ['Hantar ke Wikimedia Commons'],
+    'nl': ['Verplaats naar Wikimedia Commons', 'VNC'],
+    'pl': ['Do Commons', 'NaCommons', 'Na Commons'],
+    'ru': ['На Викисклад'],
+    'sl': ['Skopiraj v Zbirko'],
+    'sr': ['За оставу', 'Пребацити на оставу'],
+    'sv': ['Till Commons'],
+    'zh': ['Copy to Wikimedia Commons'],
 }
 
 
@@ -225,7 +219,7 @@ def pageTextPost(url, parameters):
     while not gotInfo:
         try:
             commonsHelperPage = fetch(
-                'https://tools.wmflabs.org/commonshelper/',
+                'https://commonshelper.toolforge.org/',
                 method='POST',
                 data=parameters)
             data = commonsHelperPage.data.content.decode('utf-8')
@@ -240,7 +234,7 @@ class imageTransfer(threading.Thread):
     """Facilitate transfer of image/file to commons."""
 
     def __init__(self, imagePage, newname, category, delete_after_done=False):
-        """Constructor."""
+        """Initializer."""
         self.imagePage = imagePage
         self.image_repo = imagePage.site.image_repository()
         self.newname = newname
@@ -252,7 +246,7 @@ class imageTransfer(threading.Thread):
         """Run the bot."""
         tosend = {'language': self.imagePage.site.lang.encode('utf-8'),
                   'image': self.imagePage.title(
-                      withNamespace=False).encode('utf-8'),
+                      with_ns=False).encode('utf-8'),
                   'newname': self.newname.encode('utf-8'),
                   'project': self.imagePage.site.family.name.encode('utf-8'),
                   'username': '',
@@ -263,38 +257,39 @@ class imageTransfer(threading.Thread):
                   }
 
         pywikibot.output(tosend)
-        CH = pageTextPost('http://tools.wmflabs.org/commonshelper/index.php',
+        CH = pageTextPost('https://commonshelper.toolforge.org/index.php',
                           tosend)
         pywikibot.output('Got CH desc.')
 
         tablock = CH.split('<textarea ')[1].split('>')[0]
         CH = CH.split('<textarea ' + tablock + '>')[1].split('</textarea>')[0]
-        CH = CH.replace(u'&times;', u'×')
+        CH = CH.replace('&times;', '×')
         CH = self.fixAuthor(CH)
         pywikibot.output(CH)
 
         # I want every picture to be tagged with the bottemplate so i can check
         # my contributions later.
-        CH = ('\n\n{{BotMoveToCommons|' + self.imagePage.site.lang +
-              '.' + self.imagePage.site.family.name +
-              '|year={{subst:CURRENTYEAR}}|month={{subst:CURRENTMONTHNAME}}'
-              '|day={{subst:CURRENTDAY}}}}' + CH)
+        CH = ('\n\n{{BotMoveToCommons|%s.%s|year={{subst:CURRENTYEAR}}'
+              '|month={{subst:CURRENTMONTHNAME}}|day={{subst:CURRENTDAY}}}}'
+              % (self.imagePage.site.lang, self.imagePage.site.family.name)
+              + CH)
 
         if self.category:
-            CH = CH.replace('{{subst:Unc}} <!-- Remove this line once you have '
-                            'added categories -->', '')
-            CH += u'[[Category:' + self.category + u']]'
+            CH = CH.replace(
+                '{{subst:Unc}} <!-- Remove this line once you have '
+                'added categories -->', '')
+            CH += '[[Category:' + self.category + ']]'
 
         bot = UploadRobot(url=self.imagePage.fileUrl(), description=CH,
-                          useFilename=self.newname, keepFilename=True,
-                          verifyDescription=False, ignoreWarning=True,
-                          targetSite=self.image_repo)
+                          use_filename=self.newname, keep_filename=True,
+                          verify_description=False, ignore_warning=True,
+                          target_site=self.image_repo)
         bot.run()
 
         # Should check if the image actually was uploaded
         if pywikibot.Page(self.image_repo,
-                          u'Image:' + self.newname).exists():
-            # Get a fresh copy, force to get the page so we dont run into edit
+                          'Image:' + self.newname).exists():
+            # Get a fresh copy, force to get the page so we don't run into edit
             # conflicts
             imtxt = self.imagePage.get(force=True)
 
@@ -315,7 +310,7 @@ class imageTransfer(threading.Thread):
             commentText = i18n.twtranslate(
                 self.imagePage.site,
                 'commons-file-now-available',
-                {'localfile': self.imagePage.title(withNamespace=False),
+                {'localfile': self.imagePage.title(with_ns=False),
                  'commonsfile': self.newname})
 
             pywikibot.showDiff(self.imagePage.get(), imtxt + addTemplate)
@@ -327,15 +322,15 @@ class imageTransfer(threading.Thread):
             moveSummary = i18n.twtranslate(
                 self.imagePage.site,
                 'commons-file-moved',
-                {'localfile': self.imagePage.title(withNamespace=False),
+                {'localfile': self.imagePage.title(with_ns=False),
                  'commonsfile': self.newname})
 
             # If the image is uploaded under a different name, replace all
             # instances
-            if self.imagePage.title(withNamespace=False) != self.newname:
-                imagebot = image.ImageRobot(
+            if self.imagePage.title(with_ns=False) != self.newname:
+                imagebot = ImageRobot(
                     generator=self.preloadingGen,
-                    oldImage=self.imagePage.title(withNamespace=False),
+                    oldImage=self.imagePage.title(with_ns=False),
                     newImage=self.newname,
                     summary=moveSummary, always=True, loose=True)
                 imagebot.run()
@@ -371,22 +366,19 @@ class imageTransfer(threading.Thread):
         return pageText
 
 
-# -label ok skip view
-# textarea
-archivo = config.datafilepath("Uploadbot.localskips.txt")
-try:
-    open(archivo, 'r')
-except IOError:
-    tocreate = open(archivo, 'w')
-    tocreate.write("{{NowCommons")
-    tocreate.close()
+def load_global_archivo():
+    """Load/create Uploadbot.localskips.txt and save the path in `archivo`."""
+    global archivo
+    archivo = config.datafilepath('Uploadbot.localskips.txt')
+    if not path.exists(archivo):
+        with open(archivo, 'w') as tocreate:
+            tocreate.write('{{NowCommons')
 
 
 def getautoskip():
     """Get a list of templates to skip."""
-    f = codecs.open(archivo, 'r', 'utf-8')
-    txt = f.read()
-    f.close()
+    with codecs.open(archivo, 'r', 'utf-8') as f:
+        txt = f.read()
     toreturn = txt.split('{{')[1:]
     return toreturn
 
@@ -395,9 +387,9 @@ class TkdialogIC(Tkdialog):
 
     """The dialog window for image info."""
 
-    def __init__(self, image_title, content, uploader, url, templates,
-                 commonsconflict=0):
-        """Constructor."""
+    @remove_last_args(('commonsconflict',))
+    def __init__(self, image_title, content, uploader, url, templates):
+        """Initializer."""
         # Check if `Tkinter` wasn't imported
         if isinstance(Tkinter, ImportError):
             raise Tkinter
@@ -406,16 +398,17 @@ class TkdialogIC(Tkdialog):
         self.root = Tkinter.Tk()
         # "%dx%d%+d%+d" % (width, height, xoffset, yoffset)
         # Always appear the same size and in the bottom-left corner
-        self.root.geometry("600x200+100-100")
+        self.root.geometry('600x200+100-100')
         self.root.title(image_title)
         self.changename = ''
         self.skip = 0
         self.url = url
-        self.uploader = "Unknown"
+        self.uploader = 'Unknown'
         # uploader.decode('utf-8')
         scrollbar = Tkinter.Scrollbar(self.root, orient=Tkinter.VERTICAL)
         label = Tkinter.Label(self.root, text='Enter new name or leave blank.')
-        imageinfo = Tkinter.Label(self.root, text='Uploaded by %s.' % uploader)
+        imageinfo = Tkinter.Label(self.root, text='Uploaded by {}.'.format(
+            uploader))
         textarea = Tkinter.Text(self.root)
         textarea.insert(Tkinter.END, content.encode('utf-8'))
         textarea.config(state=Tkinter.DISABLED,
@@ -424,17 +417,17 @@ class TkdialogIC(Tkdialog):
         scrollbar.config(command=textarea.yview)
         self.entry = Tkinter.Entry(self.root)
 
-        self.templatelist = Tkinter.Listbox(self.root, bg="white", height=5)
+        self.templatelist = Tkinter.Listbox(self.root, bg='white', height=5)
 
         for template in templates:
             self.templatelist.insert(Tkinter.END, template)
-        autoskip_button = Tkinter.Button(self.root, text="Add to AutoSkip",
+        autoskip_button = Tkinter.Button(self.root, text='Add to AutoSkip',
                                          command=self.add2_auto_skip)
         browser_button = Tkinter.Button(self.root, text='View in browser',
                                         command=self.open_in_browser)
         skip_button = Tkinter.Button(self.root, text='Skip',
                                      command=self.skip_file)
-        ok_button = Tkinter.Button(self.root, text="OK", command=self.ok_file)
+        ok_button = Tkinter.Button(self.root, text='OK', command=self.ok_file)
 
         # Start grid
         label.grid(row=0)
@@ -497,9 +490,8 @@ def doiskip(pagetext):
 
 def main(*args):
     """Process command line arguments and invoke bot."""
-    imagepage = None
     always = False
-    category = u''
+    category = ''
     delete_after_done = False
     # Load a lot of default generators
     local_args = pywikibot.handle_args(args)
@@ -518,77 +510,82 @@ def main(*args):
     pregenerator = genFactory.getCombinedGenerator(preload=True)
     if not pregenerator:
         pywikibot.bot.suggest_help(missing_generator=True)
-        return False
+        return
+
+    load_global_archivo()
 
     for page in pregenerator:
+        if not page.exists() or page.namespace() != 6 or page.isRedirectPage():
+            continue
+
+        imagepage = pywikibot.FilePage(page.site, page.title())
+
+        # First do autoskip.
+        if doiskip(imagepage.get()):
+            pywikibot.output('Skipping ' + page.title())
+            continue
+
+        # The first upload is last in the list.
+        try:
+            username = imagepage.latest_file_info.user
+        except NotImplementedError:
+            # No API, using the page file instead
+            (datetime, username, resolution, size,
+             comment) = imagepage.get_file_history().pop()
+
         skip = False
-        if page.exists() and (page.namespace() == 6) and (
-                not page.isRedirectPage()):
-            imagepage = pywikibot.FilePage(page.site, page.title())
+        if always:
+            newname = imagepage.title(with_ns=False)
+            CommonsPage = pywikibot.Page(pywikibot.Site('commons',
+                                                        'commons'),
+                                         'File:' + newname)
+            if CommonsPage.exists():
+                continue
+        else:
+            while True:
+                # Do TkdialogIC to accept/reject and change the name
+                newname, skip = TkdialogIC(
+                    imagepage.title(with_ns=False),
+                    imagepage.get(), username,
+                    imagepage.permalink(with_protocol=True),
+                    imagepage.templates()).getnewname()
 
-            # First do autoskip.
-            if doiskip(imagepage.get()):
-                pywikibot.output("Skipping " + page.title())
-                skip = True
-            else:
-                # The first upload is last in the list.
-                try:
-                    username = imagepage.getLatestUploader()[0]
-                except NotImplementedError:
-                    # No API, using the page file instead
-                    (datetime, username, resolution, size,
-                     comment) = imagepage.getFileVersionHistory().pop()
-                if always:
-                    newname = imagepage.title(withNamespace=False)
-                    CommonsPage = pywikibot.Page(pywikibot.Site('commons',
-                                                                'commons'),
-                                                 u'File:%s' % newname)
-                    if CommonsPage.exists():
-                        skip = True
+                if skip:
+                    pywikibot.output('Skipping this image')
+                    break
+
+                # Did we enter a new name?
+                if not newname:
+                    # Take the old name
+                    newname = imagepage.title(with_ns=False)
                 else:
-                    while True:
-                        # Do the TkdialogIC to accept/reject and change te name
-                        (newname, skip) = TkdialogIC(
-                            imagepage.title(withNamespace=False),
-                            imagepage.get(), username,
-                            imagepage.permalink(with_protocol=True),
-                            imagepage.templates()).getnewname()
+                    newname = newname.decode('utf-8')
 
-                        if skip:
-                            pywikibot.output('Skipping this image')
-                            break
+                # Check if the image already exists
+                CommonsPage = pywikibot.Page(
+                    imagepage.site.image_repository(),
+                    'File:' + newname)
 
-                        # Did we enter a new name?
-                        if len(newname) == 0:
-                            # Take the old name
-                            newname = imagepage.title(withNamespace=False)
-                        else:
-                            newname = newname.decode('utf-8')
+                if not CommonsPage.exists():
+                    break
 
-                        # Check if the image already exists
-                        CommonsPage = pywikibot.Page(
-                            imagepage.site.image_repository(),
-                            u'File:' + newname)
-                        if not CommonsPage.exists():
-                            break
-                        else:
-                            pywikibot.output(
-                                'Image already exists, pick another name or '
-                                'skip this image')
-                        # We dont overwrite images, pick another name, go to
-                        # the start of the loop
+                pywikibot.output(
+                    'Image already exists, pick another name or '
+                    'skip this image')
+                # We don't overwrite images, pick another name, go to
+                # the start of the loop
 
-            if not skip:
-                imageTransfer(imagepage, newname, category,
-                              delete_after_done).start()
+        if not skip:
+            imageTransfer(imagepage, newname, category,
+                          delete_after_done).start()
 
-    pywikibot.output('Still ' + str(threading.activeCount()) +
-                     ' active threads, lets wait')
+    pywikibot.output('Still ' + str(threading.activeCount())
+                     + ' active threads, lets wait')
     for openthread in threading.enumerate():
         if openthread != threading.currentThread():
             openthread.join()
-    pywikibot.output(u'All threads are done')
+    pywikibot.output('All threads are done')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

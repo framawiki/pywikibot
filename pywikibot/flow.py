@@ -1,24 +1,16 @@
 # -*- coding: utf-8 -*-
 """Objects representing Flow entities, like boards, topics, and posts."""
 #
-# (C) Pywikibot team, 2015
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import logging
+
+from urllib.parse import urlparse, parse_qs
 
 from pywikibot.exceptions import NoPage, UnknownExtension, LockedPage
 from pywikibot.page import BasePage, User
-from pywikibot.tools import PY2
-
-if not PY2:
-    unicode = str
-    basestring = (str,)
-    from urllib.parse import urlparse, parse_qs
-else:
-    from urlparse import urlparse, parse_qs
 
 
 logger = logging.getLogger('pywiki.wiki.flow')
@@ -37,17 +29,17 @@ class FlowPage(BasePage):
     """
 
     def __init__(self, source, title=''):
-        """Constructor.
+        """Initializer.
 
         @param source: A Flow-enabled site or a Link or Page on such a site
-        @type source: Site, Link, or Page
+        @type source: Site, pywikibot.page.Link, or pywikibot.page.Page
         @param title: normalized title of the page
-        @type title: unicode
+        @type title: str
 
         @raises TypeError: incorrect use of parameters
         @raises ValueError: use of non-Flow-enabled Site
         """
-        super(FlowPage, self).__init__(source, title)
+        super().__init__(source, title)
 
         if not self.site.has_extension('Flow'):
             raise UnknownExtension('site is not Flow-enabled')
@@ -61,15 +53,15 @@ class FlowPage(BasePage):
         """Return the UUID of the page.
 
         @return: UUID of the page
-        @rtype: unicode
+        @rtype: str
         """
         if not hasattr(self, '_uuid'):
             self._load_uuid()
         return self._uuid
 
-    def get(self, force=False, get_redirect=False, sysop=False):
+    def get(self, force=False, get_redirect=False):
         """Get the page's content."""
-        if get_redirect or force or sysop:
+        if get_redirect or force:
             raise NotImplementedError
 
         # TODO: Return more useful data
@@ -141,11 +133,11 @@ class Board(FlowPage):
         """Create and return a Topic object for a new topic on this Board.
 
         @param title: The title of the new topic (must be in plaintext)
-        @type title: unicode
+        @type title: str
         @param content: The content of the topic's initial post
-        @type content: unicode
+        @type content: str
         @param format: The content format of the value supplied for content
-        @type format: unicode (either 'wikitext' or 'html')
+        @type format: str (either 'wikitext' or 'html')
         @return: The new topic
         @rtype: Topic
         """
@@ -173,11 +165,11 @@ class Topic(FlowPage):
         @param board: The topic's parent board
         @type board: Board
         @param title: The title of the new topic (must be in plaintext)
-        @type title: unicode
+        @type title: str
         @param content: The content of the topic's initial post
-        @type content: unicode
+        @type content: str
         @param format: The content format of the value supplied for content
-        @type format: unicode (either 'wikitext' or 'html')
+        @type format: str (either 'wikitext' or 'html')
         @return: The new topic
         @rtype: Topic
         """
@@ -191,7 +183,7 @@ class Topic(FlowPage):
         @param board: The topic's parent Flow board
         @type board: Board
         @param root_uuid: The UUID of the topic and its root post
-        @type root_uuid: unicode
+        @type root_uuid: str
         @param topiclist_data: The data returned by view-topiclist
         @type topiclist_data: dict
         @return: A Topic object derived from the supplied data
@@ -201,7 +193,7 @@ class Topic(FlowPage):
         """
         if not isinstance(board, Board):
             raise TypeError('board must be a pywikibot.flow.Board object.')
-        if not isinstance(root_uuid, basestring):
+        if not isinstance(root_uuid, str):
             raise TypeError('Topic/root UUID must be a string.')
 
         topic = cls(board.site, 'Topic:' + root_uuid)
@@ -242,7 +234,7 @@ class Topic(FlowPage):
         """A convenience method to reply to this topic's root post.
 
         @param content: The content of the new post
-        @type content: unicode
+        @type content: str
         @param format: The format of the given content
         @type format: str ('wikitext' or 'html')
         @return: The new reply to this topic's root post
@@ -255,7 +247,7 @@ class Topic(FlowPage):
         """Lock this topic.
 
         @param reason: The reason for locking this topic
-        @type reason: unicode
+        @type reason: str
         """
         self.site.lock_topic(self, True, reason)
         self._reload()
@@ -264,7 +256,7 @@ class Topic(FlowPage):
         """Unlock this topic.
 
         @param reason: The reason for unlocking this topic
-        @type reason: unicode
+        @type reason: str
         """
         self.site.lock_topic(self, False, reason)
         self._reload()
@@ -273,7 +265,7 @@ class Topic(FlowPage):
         """Delete this topic through the Flow moderation system.
 
         @param reason: The reason for deleting this topic.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.delete_topic(self, reason)
         self._reload()
@@ -282,7 +274,7 @@ class Topic(FlowPage):
         """Hide this topic.
 
         @param reason: The reason for hiding this topic.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.hide_topic(self, reason)
         self._reload()
@@ -291,7 +283,7 @@ class Topic(FlowPage):
         """Suppress this topic.
 
         @param reason: The reason for suppressing this topic.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.suppress_topic(self, reason)
         self._reload()
@@ -300,25 +292,25 @@ class Topic(FlowPage):
         """Restore this topic.
 
         @param reason: The reason for restoring this topic.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.restore_topic(self, reason)
         self._reload()
 
 
 # Flow non-page-like objects
-class Post(object):
+class Post:
 
     """A post to a Flow discussion topic."""
 
     def __init__(self, page, uuid):
         """
-        Constructor.
+        Initializer.
 
         @param page: Flow topic
         @type page: Topic
         @param uuid: UUID of a Flow post
-        @type uuid: unicode
+        @type uuid: str
 
         @raises TypeError: incorrect types of parameters
         """
@@ -326,7 +318,7 @@ class Post(object):
             raise TypeError('Page must be a Topic object')
         if not page.exists():
             raise NoPage(page, 'Topic must exist: %s')
-        if not isinstance(uuid, basestring):
+        if not isinstance(uuid, str):
             raise TypeError('Post UUID must be a string')
 
         self._page = page
@@ -342,7 +334,7 @@ class Post(object):
         @param page: A Flow topic
         @type page: Topic
         @param post_uuid: The UUID of the post
-        @type post_uuid: unicode
+        @type post_uuid: str
         @param data: The JSON data returned from the API
         @type data: dict
 
@@ -379,7 +371,7 @@ class Post(object):
         if 'content' in self._current_revision:
             content = self._current_revision.pop('content')
             assert isinstance(content, dict)
-            assert isinstance(content['content'], unicode)
+            assert isinstance(content['content'], str)
             self._content[content['format']] = content['content']
 
     def _load(self, format='wikitext', load_from_topic=False):
@@ -397,7 +389,7 @@ class Post(object):
         """Return the UUID of the post.
 
         @return: UUID of the post
-        @rtype: unicode
+        @rtype: str
         """
         return self._uuid
 
@@ -436,22 +428,16 @@ class Post(object):
                                  self._current_revision['creator']['name'])
         return self._creator
 
-    def get(self, format='wikitext', force=False, sysop=False):
+    def get(self, format='wikitext', force=False):
         """Return the contents of the post in the given format.
 
         @param force: Whether to reload from the API instead of using the cache
         @type force: bool
-        @param sysop: Whether to load using sysop rights. Implies force.
-        @type sysop: bool
         @param format: Content format to return contents in
-        @type format: unicode
+        @type format: str
         @return: The contents of the post in the given content format
-        @rtype: unicode
-        @raises NotImplementedError: use of 'sysop'
+        @rtype: str
         """
-        if sysop:
-            raise NotImplementedError
-
         if format not in self._content or force:
             self._load(format)
         return self._content[format]
@@ -486,7 +472,7 @@ class Post(object):
         """Reply to this post.
 
         @param content: The content of the new post
-        @type content: unicode
+        @type content: str
         @param format: The format of the given content
         @type format: str ('wikitext' or 'html')
         @return: The new reply post
@@ -512,7 +498,7 @@ class Post(object):
         """Delete this post through the Flow moderation system.
 
         @param reason: The reason for deleting this post.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.delete_post(self, reason)
         self._load()
@@ -521,7 +507,7 @@ class Post(object):
         """Hide this post.
 
         @param reason: The reason for hiding this post.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.hide_post(self, reason)
         self._load()
@@ -530,7 +516,7 @@ class Post(object):
         """Suppress this post.
 
         @param reason: The reason for suppressing this post.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.suppress_post(self, reason)
         self._load()
@@ -539,7 +525,7 @@ class Post(object):
         """Restore this post.
 
         @param reason: The reason for restoring this post.
-        @type reason: unicode
+        @type reason: str
         """
         self.site.restore_post(self, reason)
         self._load()

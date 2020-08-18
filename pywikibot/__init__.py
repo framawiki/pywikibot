@@ -1,41 +1,27 @@
 # -*- coding: utf-8 -*-
 """The initialization file for the Pywikibot framework."""
 #
-# (C) Pywikibot team, 2008-2018
+# (C) Pywikibot team, 2008-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
-__release__ = '3.0-dev'
-__url__ = 'https://www.mediawiki.org/wiki/Special:MyLanguage/Manual:Pywikibot'
-
 import atexit
 import datetime
 import math
 import re
-import sys
 import threading
+import time
 
+from contextlib import suppress
 from decimal import Decimal
-
-if sys.version_info[0] > 2:
-    from queue import Queue
-    long = int
-    basestring = str
-else:
-    from Queue import Queue
-
+from queue import Queue
 from warnings import warn
 
-# logging must be imported first so that other modules can
-# use these logging methods during the initialisation sequence.
-from pywikibot.logging import (
-    critical, debug, error, exception, log, output, stdout, warning
-)
+from pywikibot.__metadata__ import (
+    __copyright__, __description__, __download_url__, __license__,
+    __maintainer__, __maintainer_email__, __name__, __url__, __version__)
 
-from pywikibot import config2 as config
-
+from pywikibot._wbtypes import WbRepresentation as _WbRepresentation
 from pywikibot.bot import (
     input, input_choice, input_yn, inputChoice, handle_args, showHelp, ui,
     calledModuleName, Bot, CurrentPageBot, WikidataBot,
@@ -45,7 +31,8 @@ from pywikibot.bot import (
 from pywikibot.bot_choice import (
     QuitKeyboardInterrupt as _QuitKeyboardInterrupt,
 )
-from pywikibot.data.api import UploadWarning as _UploadWarning
+from pywikibot import config2 as config
+from pywikibot.data.api import UploadWarning
 from pywikibot.diff import PatchManager
 from pywikibot.exceptions import (
     Error, InvalidTitle, BadTitle, NoPage, NoMoveTarget, SectionError,
@@ -57,88 +44,76 @@ from pywikibot.exceptions import (
     LockedPage, CascadeLockedPage, LockedNoPage, NoCreateError,
     EditConflict, PageDeletedConflict, PageCreatedConflict,
     ServerError, FatalServerError, Server504Error,
-    CaptchaError, SpamfilterError, CircularRedirect, InterwikiRedirectPage,
-    WikiBaseError, CoordinateGlobeUnknownException,
-    DeprecatedPageNotFoundError as _DeprecatedPageNotFoundError,
-    _EmailUserError,
+    CaptchaError, SpamblacklistError, TitleblacklistError,
+    CircularRedirect, InterwikiRedirectPage, WikiBaseError, NoWikibaseEntity,
+    CoordinateGlobeUnknownException,
 )
 from pywikibot.family import Family
 from pywikibot.i18n import translate
+from pywikibot.logging import (
+    critical, debug, error, exception, log, output, stdout, warning
+)
 from pywikibot.site import BaseSite
+import pywikibot.textlib as textlib
 from pywikibot.tools import (
     # __ to avoid conflict with ModuleDeprecationWrapper._deprecated
     classproperty,
     deprecated as __deprecated,
     deprecate_arg as _deprecate_arg,
+    issue_deprecation_warning,
     normalize_username,
-    MediaWikiVersion,
+    MediaWikiVersion as _MediaWikiVersion,
     redirect_func,
     ModuleDeprecationWrapper as _ModuleDeprecationWrapper,
-    PY2,
-    UnicodeMixin,
+    _UnicodeMixin as UnicodeMixin,
 )
 from pywikibot.tools.formatter import color_format
 
-import pywikibot.textlib as textlib
 
 textlib_methods = (
-    'unescape', 'replaceExcept', 'removeDisabledParts', 'removeHTMLParts',
-    'isDisabled', 'interwikiFormat', 'interwikiSort',
-    'getLanguageLinks', 'replaceLanguageLinks',
-    'removeLanguageLinks', 'removeLanguageLinksAndSeparator',
-    'getCategoryLinks', 'categoryFormat', 'replaceCategoryLinks',
-    'removeCategoryLinks', 'removeCategoryLinksAndSeparator',
-    'replaceCategoryInPlace', 'compileLinkR', 'extract_templates_and_params',
-    'TimeStripper',
+    'categoryFormat', 'compileLinkR', 'extract_templates_and_params',
+    'getCategoryLinks', 'getLanguageLinks', 'interwikiFormat', 'interwikiSort',
+    'isDisabled', 'removeCategoryLinks', 'removeCategoryLinksAndSeparator',
+    'removeDisabledParts', 'removeHTMLParts', 'removeLanguageLinks',
+    'removeLanguageLinksAndSeparator', 'replaceCategoryInPlace',
+    'replaceCategoryLinks', 'replaceExcept', 'replaceLanguageLinks',
+    'TimeStripper', 'unescape',
 )
 
 __all__ = (
-    'config', 'ui', 'Site', 'UnicodeMixin', 'translate',
-    'Page', 'FilePage', 'Category', 'Link', 'User',
-    'ItemPage', 'PropertyPage', 'Claim',
-    'html2unicode', 'url2unicode', 'unicode2html',
-    'stdout', 'output', 'warning', 'error', 'critical', 'debug',
-    'exception', 'input_choice', 'input', 'input_yn', 'inputChoice',
-    'handle_args', 'handleArgs', 'showHelp', 'ui', 'log',
-    'calledModuleName', 'Bot', 'CurrentPageBot', 'WikidataBot',
-    'Error', 'InvalidTitle', 'BadTitle', 'NoPage', 'NoMoveTarget',
-    'SectionError',
-    'SiteDefinitionError', 'NoSuchSite', 'UnknownSite', 'UnknownFamily',
-    'UnknownExtension',
-    'NoUsername', 'UserBlocked', 'UserActionRefuse',
-    'PageRelatedError', 'UnsupportedPage', 'IsRedirectPage',
-    'IsNotRedirectPage',
-    'PageSaveRelatedError', 'PageNotSaved', 'OtherPageSaveError',
-    'LockedPage', 'CascadeLockedPage', 'LockedNoPage', 'NoCreateError',
-    'EditConflict', 'PageDeletedConflict', 'PageCreatedConflict',
-    'UploadWarning',
-    'ServerError', 'FatalServerError', 'Server504Error',
-    'CaptchaError', 'SpamfilterError', 'CircularRedirect',
-    'InterwikiRedirectPage',
-    'WikiBaseError', 'CoordinateGlobeUnknownException',
-    'QuitKeyboardInterrupt',
+    '__copyright__', '__description__', '__download_url__', '__license__',
+    '__maintainer__', '__maintainer_email__', '__name__', '__release__',
+    '__url__', '__version__',
+    'BadTitle', 'Bot', 'calledModuleName', 'CaptchaError', 'CascadeLockedPage',
+    'Category', 'CircularRedirect', 'Claim', 'config',
+    'CoordinateGlobeUnknownException', 'critical', 'CurrentPageBot', 'debug',
+    'EditConflict', 'error', 'Error', 'exception', 'FatalServerError',
+    'FilePage', 'handle_args', 'handleArgs', 'html2unicode', 'input',
+    'input_choice', 'input_yn', 'inputChoice', 'InterwikiRedirectPage',
+    'InvalidTitle', 'IsNotRedirectPage', 'IsRedirectPage', 'ItemPage', 'Link',
+    'LockedNoPage', 'LockedPage', 'log', 'NoCreateError', 'NoMoveTarget',
+    'NoPage', 'NoSuchSite', 'NoUsername', 'NoWikibaseEntity',
+    'OtherPageSaveError', 'output',
+    'Page', 'PageCreatedConflict', 'PageDeletedConflict', 'PageNotSaved',
+    'PageRelatedError', 'PageSaveRelatedError', 'PropertyPage',
+    'QuitKeyboardInterrupt', 'SectionError', 'Server504Error', 'ServerError',
+    'showHelp', 'Site', 'SiteDefinitionError', 'SiteLink',
+    'SpamblacklistError', 'stdout', 'TitleblacklistError', 'translate', 'ui',
+    'unicode2html', 'UnicodeMixin', 'UnknownExtension', 'UnknownFamily',
+    'UnknownSite', 'UnsupportedPage', 'UploadWarning', 'url2unicode', 'User',
+    'UserBlocked', 'warning', 'WikiBaseError', 'WikidataBot',
 )
 __all__ += textlib_methods
 
-if PY2:
-    # T111615: Python 2 requires __all__ is bytes
-    globals()['__all__'] = tuple(bytes(item) for item in __all__)
 
 for _name in textlib_methods:
     target = getattr(textlib, _name)
-    wrapped_func = redirect_func(target)
+    wrapped_func = redirect_func(target, since='20140820', future_warning=True)
     globals()[_name] = wrapped_func
 
 
 deprecated = redirect_func(__deprecated)
 deprecate_arg = redirect_func(_deprecate_arg)
-
-
-if sys.version_info[:2] in ((2, 6), (3, 3)):
-    warn(
-        'Pywikibot will soon drop support for Python 2.6 and 3.3',
-        DeprecationWarning,
-    )
 
 
 class Timestamp(datetime.datetime):
@@ -157,12 +132,11 @@ class Timestamp(datetime.datetime):
     when previously they returned a MediaWiki string representation, these
     methods also accept a Timestamp object, in which case they return a clone.
 
-    Use Site.getcurrenttime() for the current time; this is more reliable
+    Use Site.server_time() for the current time; this is more reliable
     than using Timestamp.utcnow().
-
     """
 
-    mediawikiTSFormat = "%Y%m%d%H%M%S"
+    mediawikiTSFormat = '%Y%m%d%H%M%S'
     _ISO8601Format_new = '{0:+05d}-{1:02d}-{2:02d}T{3:02d}:{4:02d}:{5:02d}Z'
 
     def clone(self):
@@ -170,7 +144,7 @@ class Timestamp(datetime.datetime):
         return self.replace(microsecond=self.microsecond)
 
     @classproperty
-    def ISO8601Format(cls):  # noqa: N805
+    def ISO8601Format(cls):
         """ISO8601 format string class property for compatibility purpose."""
         return cls._ISO8601Format()
 
@@ -191,13 +165,13 @@ class Timestamp(datetime.datetime):
         """Convert an ISO 8601 timestamp to a Timestamp object.
 
         @param ts: ISO 8601 timestamp or a Timestamp object already
-        @type ts: str ot Timestamp
+        @type ts: str or Timestamp
         @param sep: one-character separator, placed between the date and time
         @type sep: str
         @return: Timestamp object
         @rtype: Timestamp
         """
-        # If inadvertantly passed a Timestamp object, use replace()
+        # If inadvertently passed a Timestamp object, use replace()
         # to create a clone.
         if isinstance(ts, cls):
             return ts.clone()
@@ -206,10 +180,12 @@ class Timestamp(datetime.datetime):
     @classmethod
     def fromtimestampformat(cls, ts):
         """Convert a MediaWiki internal timestamp to a Timestamp object."""
-        # If inadvertantly passed a Timestamp object, use replace()
+        # If inadvertently passed a Timestamp object, use replace()
         # to create a clone.
         if isinstance(ts, cls):
             return ts.clone()
+        if len(ts) == 8:  # year, month and day are given only
+            ts += '000'
         return cls.strptime(ts, cls.mediawikiTSFormat)
 
     def isoformat(self, sep='T'):
@@ -223,7 +199,8 @@ class Timestamp(datetime.datetime):
         return self.strftime(self._ISO8601Format(sep))
 
     toISOformat = redirect_func(isoformat, old_name='toISOformat',
-                                class_name='Timestamp')
+                                class_name='Timestamp', since='20141219',
+                                future_warning=True)
 
     def totimestampformat(self):
         """Convert object to a MediaWiki internal timestamp."""
@@ -244,7 +221,7 @@ class Timestamp(datetime.datetime):
             return newdt
 
     def __sub__(self, other):
-        """Perform substraction, returning a Timestamp instead of datetime."""
+        """Perform subtraction, returning a Timestamp instead of datetime."""
         newdt = super(Timestamp, self).__sub__(other)
         if isinstance(newdt, datetime.datetime):
             return Timestamp(newdt.year, newdt.month, newdt.day, newdt.hour,
@@ -254,23 +231,16 @@ class Timestamp(datetime.datetime):
             return newdt
 
 
-from pywikibot._wbtypes import WbRepresentation as _WbRepresentation
-
-
 class Coordinate(_WbRepresentation):
 
-    """
-    Class for handling and storing Coordinates.
-
-    For now its just being used for DataSite, but
-    in the future we can use it for the GeoData extension.
-    """
+    """Class for handling and storing Coordinates."""
 
     _items = ('lat', 'lon', 'entity')
 
     @_deprecate_arg('entity', 'globe_item')
     def __init__(self, lat, lon, alt=None, precision=None, globe=None,
-                 typ='', name='', dim=None, site=None, globe_item=None):
+                 typ='', name='', dim=None, site=None, globe_item=None,
+                 primary=False):
         """
         Represent a geo coordinate.
 
@@ -295,6 +265,8 @@ class Coordinate(_WbRepresentation):
                            of this Wikibase item. Takes precedence over 'globe'
                            if present.
         @type globe_item: pywikibot.ItemPage or str
+        @param primary: True for a primary set of coordinates
+        @type primary: bool
         """
         self.lat = lat
         self.lon = lon
@@ -305,11 +277,12 @@ class Coordinate(_WbRepresentation):
         self.name = name
         self._dim = dim
         self.site = site or Site().data_repository()
+        self.primary = primary
 
         if globe:
             globe = globe.lower()
         elif not globe_item:
-            globe = site.default_globe()
+            globe = self.site.default_globe()
         self.globe = globe
 
     @property
@@ -318,7 +291,7 @@ class Coordinate(_WbRepresentation):
         if not self._entity:
             if self.globe not in self.site.globes():
                 raise CoordinateGlobeUnknownException(
-                    u"%s is not supported in Wikibase yet."
+                    '%s is not supported in Wikibase yet.'
                     % self.globe)
             return self.site.globes()[self.globe]
 
@@ -369,11 +342,11 @@ class Coordinate(_WbRepresentation):
 
     @property
     def precision(self):
-        u"""
+        """
         Return the precision of the geo coordinate.
 
-        The precision is calculated if the Coordinate does not have a precision,
-        and self._dim is set.
+        The precision is calculated if the Coordinate does not have a
+        precision, and self._dim is set.
 
         When no precision and no self._dim exists, None is returned.
 
@@ -385,13 +358,15 @@ class Coordinate(_WbRepresentation):
 
         In small angle approximation (and thus in radians):
 
-        M{Δλ ≈ Δpos / r_φ}, where r_φ is the radius of earth at the given latitude.
+        M{Δλ ≈ Δpos / r_φ}, where r_φ is the radius of earth at the given
+        latitude.
         Δλ is the error in longitude.
 
         M{r_φ = r cos φ}, where r is the radius of earth, φ the latitude
 
         Therefore::
-            precision = math.degrees(self._dim/(radius*math.cos(math.radians(self.lat))))
+            precision = math.degrees(
+                self._dim/(radius*math.cos(math.radians(self.lat))))
 
         @rtype: float or None
         """
@@ -408,19 +383,24 @@ class Coordinate(_WbRepresentation):
         self._precision = value
 
     def precisionToDim(self):
-        """Convert precision from Wikibase to GeoData's dim and return the latter.
+        """
+        Convert precision from Wikibase to GeoData's dim and return the latter.
 
-        dim is calculated if the Coordinate doesn't have a dimension, and precision is set.
-        When neither dim nor precision are set, ValueError is thrown.
+        dim is calculated if the Coordinate doesn't have a dimension, and
+        precision is set. When neither dim nor precision are set, ValueError
+        is thrown.
 
         Carrying on from the earlier derivation of precision, since
-        precision = math.degrees(dim/(radius*math.cos(math.radians(self.lat)))), we get
-            dim = math.radians(precision)*radius*math.cos(math.radians(self.lat))
-        But this is not valid, since it returns a float value for dim which is an integer.
-        We must round it off to the nearest integer.
+        precision = math.degrees(dim/(radius*math.cos(math.radians(self.lat))))
+        we get:
+            dim = math.radians(
+                precision)*radius*math.cos(math.radians(self.lat))
+        But this is not valid, since it returns a float value for dim which is
+        an integer. We must round it off to the nearest integer.
 
         Therefore::
-            dim = int(round(math.radians(precision)*radius*math.cos(math.radians(self.lat))))
+            dim = int(round(math.radians(
+                precision)*radius*math.cos(math.radians(self.lat))))
 
         @rtype: int or None
         """
@@ -430,7 +410,8 @@ class Coordinate(_WbRepresentation):
             radius = 6378137
             self._dim = int(
                 round(
-                    math.radians(self._precision) * radius * math.cos(math.radians(self.lat))
+                    math.radians(self._precision) * radius * math.cos(
+                        math.radians(self.lat))
                 )
             )
         return self._dim
@@ -496,14 +477,18 @@ class WbTime(_WbRepresentation):
         readable string, e.g., 'hour'. If no precision is given, it is set
         according to the given time units.
 
-        Timezone information is given in three different ways depending on the time:
-        * Times after the implementation of UTC (1972): as an offset from UTC in minutes;
-        * Times before the implementation of UTC: the offset of the time zone from universal time;
-        * Before the implementation of time zones: The longitude of the place of
-          the event, in the range −180° to 180°, multiplied by 4 to convert to minutes.
+        Timezone information is given in three different ways depending on the
+        time:
+        * Times after the implementation of UTC (1972): as an offset from UTC
+          in minutes;
+        * Times before the implementation of UTC: the offset of the time zone
+          from universal time;
+        * Before the implementation of time zones: The longitude of the place
+          of the event, in the range −180° to 180°, multiplied by 4 to convert
+          to minutes.
 
         @param year: The year as a signed integer of between 1 and 16 digits.
-        @type year: long
+        @type year: int
         @param month: Month
         @type month: int
         @param day: Day
@@ -516,11 +501,11 @@ class WbTime(_WbRepresentation):
         @type second: int
         @param precision: The unit of the precision of the time.
         @type precision: int or str
-        @param before: Number of units after the given time it could be, if uncertain.
-            The unit is given by the precision.
+        @param before: Number of units after the given time it could be, if
+            uncertain. The unit is given by the precision.
         @type before: int
-        @param after: Number of units before the given time it could be, if uncertain.
-            The unit is given by the precision.
+        @param after: Number of units before the given time it could be, if
+            uncertain. The unit is given by the precision.
         @type after: int
         @param timezone: Timezone information in minutes.
         @type timezone: int
@@ -547,7 +532,7 @@ class WbTime(_WbRepresentation):
         if month is None:
             self.precision = self.PRECISION['year']
             month = 1
-        self.year = long(year)
+        self.year = year
         self.month = month
         self.day = day
         self.hour = hour
@@ -566,8 +551,8 @@ class WbTime(_WbRepresentation):
 
         # if precision is given it overwrites the autodetection above
         if precision is not None:
-            if (isinstance(precision, int) and
-                    precision in self.PRECISION.values()):
+            if (isinstance(precision, int)
+                    and precision in self.PRECISION.values()):
                 self.precision = precision
             elif precision in self.PRECISION:
                 self.precision = self.PRECISION[precision]
@@ -583,18 +568,19 @@ class WbTime(_WbRepresentation):
         The timestamp differs from ISO 8601 in that:
         * The year is always signed and having between 1 and 16 digits;
         * The month, day and time are zero if they are unknown;
-        * The Z is discarded since time zone is determined from the timezone param.
+        * The Z is discarded since time zone is determined from the timezone
+          param.
 
         @param datetimestr: Timestamp in a format resembling ISO 8601,
             e.g. +2013-01-01T00:00:00Z
         @type datetimestr: str
         @param precision: The unit of the precision of the time.
         @type precision: int or str
-        @param before: Number of units after the given time it could be, if uncertain.
-            The unit is given by the precision.
+        @param before: Number of units after the given time it could be, if
+            uncertain. The unit is given by the precision.
         @type before: int
-        @param after: Number of units before the given time it could be, if uncertain.
-            The unit is given by the precision.
+        @param after: Number of units before the given time it could be, if
+            uncertain. The unit is given by the precision.
         @type after: int
         @param timezone: Timezone information in minutes.
         @type timezone: int
@@ -607,9 +593,9 @@ class WbTime(_WbRepresentation):
         match = re.match(r'([-+]?\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z',
                          datetimestr)
         if not match:
-            raise ValueError(u"Invalid format: '%s'" % datetimestr)
+            raise ValueError("Invalid format: '%s'" % datetimestr)
         t = match.groups()
-        return cls(long(t[0]), int(t[1]), int(t[2]),
+        return cls(int(t[0]), int(t[1]), int(t[2]),
                    int(t[3]), int(t[4]), int(t[5]),
                    precision, before, after, timezone, calendarmodel, site)
 
@@ -623,11 +609,11 @@ class WbTime(_WbRepresentation):
         @type timestamp: pywikibot.Timestamp
         @param precision: The unit of the precision of the time.
         @type precision: int or str
-        @param before: Number of units after the given time it could be, if uncertain.
-            The unit is given by the precision.
+        @param before: Number of units after the given time it could be, if
+            uncertain. The unit is given by the precision.
         @type before: int
-        @param after: Number of units before the given time it could be, if uncertain.
-            The unit is given by the precision.
+        @param after: Number of units before the given time it could be, if
+            uncertain. The unit is given by the precision.
         @type after: int
         @param timezone: Timezone information in minutes.
         @type timezone: int
@@ -668,7 +654,8 @@ class WbTime(_WbRepresentation):
         @return: Timestamp
         @rtype: pywikibot.Timestamp
 
-        @raises ValueError: instance value can not be represented using Timestamp
+        @raises ValueError: instance value can not be represented using
+            Timestamp
         """
         if self.year <= 0:
             raise ValueError('You cannot turn BC dates into a Timestamp')
@@ -716,7 +703,7 @@ class WbQuantity(_WbRepresentation):
     @staticmethod
     def _require_errors(site):
         """
-        Check if the Wikibase site is so old it requires error bounds to be given.
+        Check if Wikibase site is so old it requires error bounds to be given.
 
         If no site item is supplied it raises a warning and returns True.
 
@@ -727,9 +714,9 @@ class WbQuantity(_WbRepresentation):
         if not site:
             warning(
                 "WbQuantity now expects a 'site' parameter. This is needed to "
-                "ensure correct handling of error bounds.")
+                'ensure correct handling of error bounds.')
             return False
-        return MediaWikiVersion(site.version()) < MediaWikiVersion('1.29.0-wmf.2')
+        return site.mw_version < '1.29.0-wmf.2'
 
     @staticmethod
     def _todecimal(value):
@@ -761,21 +748,21 @@ class WbQuantity(_WbRepresentation):
         """
         if value is None:
             return None
-        return format(value, "+g")
+        return format(value, '+g')
 
     def __init__(self, amount, unit=None, error=None, site=None):
-        u"""
+        """
         Create a new WbQuantity object.
 
         @param amount: number representing this quantity
-        @type amount: string or Decimal. Other types are accepted, and converted
-                      via str to Decimal.
+        @type amount: str or Decimal. Other types are accepted, and
+            converted via str to Decimal.
         @param unit: the Wikibase item for the unit or the entity URI of this
-                     Wikibase item.
+            Wikibase item.
         @type unit: pywikibot.ItemPage, str or None
         @param error: the uncertainty of the amount (e.g. ±1)
-        @type error: same as amount, or tuple of two values, where the first value is
-                     the upper error and the second is the lower error value.
+        @type error: same as amount, or tuple of two values, where the first
+            value is the upper error and the second is the lower error value.
         @param site: The Wikibase site
         @type site: pywikibot.site.DataSite
         """
@@ -787,7 +774,7 @@ class WbQuantity(_WbRepresentation):
         self.site = site or Site().data_repository()
 
         # also allow entity URIs to be provided via unit parameter
-        if isinstance(unit, basestring) and \
+        if isinstance(unit, str) and \
                 unit.partition('://')[0] not in ('http', 'https'):
             raise ValueError("'unit' must be an ItemPage or entity uri.")
 
@@ -795,7 +782,7 @@ class WbQuantity(_WbRepresentation):
             self.upperBound = self.lowerBound = None
         else:
             if error is None:
-                self.upperBound = self.lowerBound = Decimal(0)
+                upperError = lowerError = Decimal(0)
             elif isinstance(error, tuple):
                 upperError = self._todecimal(error[0])
                 lowerError = self._todecimal(error[1])
@@ -829,7 +816,7 @@ class WbQuantity(_WbRepresentation):
         @type lazy_load: bool
         @return: pywikibot.ItemPage
         """
-        if not isinstance(self._unit, basestring):
+        if not isinstance(self._unit, str):
             return self._unit
 
         repo = repo or self.site
@@ -909,7 +896,7 @@ class WbMonolingualText(_WbRepresentation):
     @classmethod
     def fromWikibase(cls, wb):
         """
-        Create a WbMonolingualText from the JSON data given by the Wikibase API.
+        Create a WbMonolingualText from the JSON data given by Wikibase API.
 
         @param wb: Wikibase JSON
         @type wb: dict
@@ -978,11 +965,13 @@ class _WbDataPage(_WbRepresentation):
         @type site: str
         """
         if not isinstance(page, Page):
-            raise ValueError('Page must be a pywikibot.Page object.')
+            raise ValueError(
+                'Page {} must be a pywikibot.Page object not a {}.'
+                .format(page, type(page)))
 
         # validate page exists
         if not page.exists():
-            raise ValueError('Page must exist.')
+            raise ValueError('Page {} must exist.'.format(page))
 
         # validate page is on the right site, and that site supports the type
         if not data_site:
@@ -1001,7 +990,7 @@ class _WbDataPage(_WbRepresentation):
                 not page.title().endswith(ending):
             raise ValueError(
                 "Page must be in 'Data:' namespace and end in '{0}' "
-                "for {1}.".format(ending, label))
+                'for {1}.'.format(ending, label))
 
     def __init__(self, page, site=None):
         """
@@ -1048,9 +1037,7 @@ class _WbDataPage(_WbRepresentation):
 
 
 class WbGeoShape(_WbDataPage):
-    """
-    A Wikibase geo-shape representation.
-    """
+    """A Wikibase geo-shape representation."""
 
     @classmethod
     def _get_data_site(cls, site):
@@ -1081,9 +1068,7 @@ class WbGeoShape(_WbDataPage):
 
 
 class WbTabularData(_WbDataPage):
-    """
-    A Wikibase tabular-data representation.
-    """
+    """A Wikibase tabular-data representation."""
 
     @classmethod
     def _get_data_site(cls, site):
@@ -1159,6 +1144,36 @@ _sites = {}
 _url_cache = {}  # The code/fam pair for each URL
 
 
+def _code_fam_from_url(url):
+    """Set url to cache and get code and family from cache.
+
+    Site helper method.
+    @param url: The site URL to get code and family
+    @type url: str
+    @raises pywikibot.exceptions.SiteDefinitionError: Unknown URL
+    """
+    if url not in _url_cache:
+        matched_sites = []
+        # Iterate through all families and look, which does apply to
+        # the given URL
+        for fam in config.family_files:
+            family = Family.load(fam)
+            code = family.from_url(url)
+            if code is not None:
+                matched_sites.append((code, family))
+
+        if not matched_sites:
+            # TODO: As soon as AutoFamily is ready, try and use an
+            #       AutoFamily
+            raise SiteDefinitionError("Unknown URL '{0}'.".format(url))
+        if len(matched_sites) > 1:
+            warning('Found multiple matches for URL "{0}": {1} (use first)'
+                    .format(url, ', '.join(str(s) for s in matched_sites)))
+        _url_cache[url] = matched_sites[0]
+    return _url_cache[url]
+
+
+@_deprecate_arg('sysop', None)
 def Site(code=None, fam=None, user=None, sysop=None, interface=None, url=None):
     """A factory method to obtain a Site object.
 
@@ -1168,56 +1183,35 @@ def Site(code=None, fam=None, user=None, sysop=None, interface=None, url=None):
     using the method parameters.
 
     @param code: language code (override config.mylang)
-    @type code: string
+    @type code: str
     @param fam: family name or object (override config.family)
-    @type fam: string or Family
+    @type fam: str or pywikibot.family.Family
     @param user: bot user name to use on this site (override config.usernames)
-    @type user: unicode
-    @param sysop: sysop user to use on this site (override config.sysopnames)
-    @type sysop: unicode
+    @type user: str
     @param interface: site class or name of class in pywikibot.site
         (override config.site_interface)
     @type interface: subclass of L{pywikibot.site.BaseSite} or string
     @param url: Instead of code and fam, does try to get a Site based on the
         URL. Still requires that the family supporting that URL exists.
-    @type url: string
+    @type url: str
     @rtype: pywikibot.site.APISite
-
+    @raises ValueError: URL and pair of code and family given
+    @raises ValueError: Invalid interface name
+    @raises pywikibot.exceptions.SiteDefinitionError: Unknown URL
     """
-    # Either code and fam or only url
-    if url and (code or fam):
-        raise ValueError('URL to the wiki OR a pair of code and family name '
-                         'should be provided')
-    _logger = "wiki"
+    _logger = 'wiki'
 
+    if sysop is not None:
+        issue_deprecation_warning('positional argument of "sysop"', depth=3,
+                                  warning_class=DeprecationWarning,
+                                  since='20190907')
     if url:
-        if url not in _url_cache:
-            matched_sites = []
-            # Iterate through all families and look, which does apply to
-            # the given URL
-            for fam in config.family_files:
-                family = Family.load(fam)
-                code = family.from_url(url)
-                if code is not None:
-                    matched_sites += [(code, family)]
-
-            if matched_sites:
-                if len(matched_sites) > 1:
-                    warning(
-                        'Found multiple matches for URL "{0}": {1} (use first)'
-                        .format(url, ', '.join(str(s) for s in matched_sites)))
-                _url_cache[url] = matched_sites[0]
-            else:
-                # TODO: As soon as AutoFamily is ready, try and use an
-                #       AutoFamily
-                _url_cache[url] = None
-
-        cached = _url_cache[url]
-        if cached:
-            code = cached[0]
-            fam = cached[1]
-        else:
-            raise SiteDefinitionError("Unknown URL '{0}'.".format(url))
+        # Either code and fam or only url
+        if code or fam:
+            raise ValueError(
+                'URL to the wiki OR a pair of code and family name '
+                'should be provided')
+        code, fam = _code_fam_from_url(url)
     else:
         # Fallback to config defaults
         code = code or config.mylang
@@ -1231,21 +1225,20 @@ def Site(code=None, fam=None, user=None, sysop=None, interface=None, url=None):
     # config.usernames is initialised with a defaultdict for each family name
     family_name = str(fam)
 
-    code_to_user = config.usernames['*'].copy()
+    code_to_user = {}
+    if '*' in config.usernames:  # T253127: usernames is a defaultdict
+        code_to_user = config.usernames['*'].copy()
     code_to_user.update(config.usernames[family_name])
     user = user or code_to_user.get(code) or code_to_user.get('*')
 
-    code_to_sysop = config.sysopnames['*'].copy()
-    code_to_sysop.update(config.sysopnames[family_name])
-    sysop = sysop or code_to_sysop.get(code) or code_to_sysop.get('*')
-
     if not isinstance(interface, type):
-        # If it isnt a class, assume it is a string
+        # If it isn't a class, assume it is a string
         try:
             tmp = __import__('pywikibot.site', fromlist=[interface])
-            interface = getattr(tmp, interface)
         except ImportError:
             raise ValueError('Invalid interface name: {0}'.format(interface))
+        else:
+            interface = getattr(tmp, interface)
 
     if not issubclass(interface, BaseSite):
         warning('Site called with interface=%s' % interface.__name__)
@@ -1253,8 +1246,8 @@ def Site(code=None, fam=None, user=None, sysop=None, interface=None, url=None):
     user = normalize_username(user)
     key = '%s:%s:%s:%s' % (interface.__name__, fam, code, user)
     if key not in _sites or not isinstance(_sites[key], interface):
-        _sites[key] = interface(code=code, fam=fam, user=user, sysop=sysop)
-        debug(u"Instantiated %s object '%s'"
+        _sites[key] = interface(code=code, fam=fam, user=user)
+        debug("Instantiated %s object '%s'"
               % (interface.__name__, _sites[key]), _logger)
 
         if _sites[key].code != code:
@@ -1265,27 +1258,30 @@ def Site(code=None, fam=None, user=None, sysop=None, interface=None, url=None):
 
 
 # alias for backwards-compability
-getSite = redirect_func(Site, old_name='getSite')
+getSite = redirect_func(Site, old_name='getSite', since='20150924')
 
 
 # These imports depend on Wb* classes above.
-from pywikibot.page import (
+from pywikibot.page import (  # noqa: E402
     Page,
     FilePage,
     Category,
     Link,
+    SiteLink,
     User,
     ItemPage,
     PropertyPage,
     Claim,
 )
-from pywikibot.page import html2unicode, url2unicode, unicode2html
+from pywikibot.page import (  # noqa: E402
+    html2unicode, url2unicode, unicode2html)
 
 
 link_regex = re.compile(r'\[\[(?P<title>[^\]|[<>{}]*)(\|.*?)?\]\]')
 
 
-@__deprecated('comment parameter for page saving method')
+@__deprecated('comment parameter for page saving method', since='20140604',
+              future_warning=True)
 def setAction(s):
     """Set a summary to use for changed page submissions."""
     config.default_edit_summary = s
@@ -1304,6 +1300,17 @@ def showDiff(oldtext, newtext, context=0):
 # Throttle and thread handling
 
 
+def sleep(secs):
+    """Suspend execution of the current thread for the given number of seconds.
+
+    Drop this process from the throttle log if wait time is greater than
+    30 seconds.
+    """
+    if secs >= 30:
+        stopme()
+    time.sleep(secs)
+
+
 def stopme():
     """
     Drop this process from the throttle log, after pending threads finish.
@@ -1320,10 +1327,10 @@ def _flush(stop=True):
     """
     Drop this process from the throttle log, after pending threads finish.
 
-    Wait for the page-putter to flush its queue. Also drop this process from the
-    throttle log. Called automatically at Python exit.
+    Wait for the page-putter to flush its queue. Also drop this process from
+    the throttle log. Called automatically at Python exit.
     """
-    _logger = "wiki"
+    _logger = 'wiki'
 
     debug('_flush() called', _logger)
 
@@ -1347,22 +1354,22 @@ def _flush(stop=True):
             '{lightblue}Waiting for {num} pages to be put. '
             'Estimated time remaining: {sec}{default}', num=num, sec=sec))
 
-    while _putthread.isAlive() and page_put_queue.qsize() > 0:
+    while (_putthread.is_alive()
+           and (page_put_queue.qsize() > 0
+                or page_put_queue_busy.qsize() > 0)):
         try:
             _putthread.join(1)
         except KeyboardInterrupt:
-            if input_yn('There are {0} pages remaining in the queue. '
-                        'Estimated time remaining: {1}\nReally exit?'
-                        ''.format(*remaining()),
+            if input_yn('There are {} pages remaining in the queue. '
+                        'Estimated time remaining: {}\nReally exit?'
+                        .format(*remaining()),
                         default=False, automatic_quit=False):
                 return
 
     # only need one drop() call because all throttles use the same global pid
-    try:
+    with suppress(IndexError):
         list(_sites.values())[0].throttle.drop()
-        log(u"Dropped throttle(s).")
-    except IndexError:
-        pass
+        log('Dropped throttle(s).')
 
 
 atexit.register(_flush)
@@ -1373,21 +1380,21 @@ def async_manager():
     """Daemon; take requests from the queue and execute them in background."""
     while True:
         (request, args, kwargs) = page_put_queue.get()
+        page_put_queue_busy.put(None)
         if request is None:
             break
         request(*args, **kwargs)
         page_put_queue.task_done()
+        page_put_queue_busy.get()
 
 
 def async_request(request, *args, **kwargs):
     """Put a request on the queue, and start the daemon if necessary."""
-    if not _putthread.isAlive():
+    if not _putthread.is_alive():
         try:
             page_put_queue.mutex.acquire()
-            try:
+            with suppress(AssertionError, RuntimeError):
                 _putthread.start()
-            except (AssertionError, RuntimeError):
-                pass
         finally:
             page_put_queue.mutex.release()
     page_put_queue.put((request, args, kwargs))
@@ -1395,6 +1402,8 @@ def async_request(request, *args, **kwargs):
 
 # queue to hold pending requests
 page_put_queue = Queue(config.max_queue_size)
+# queue to signal that async_manager is working on a request. See T147178.
+page_put_queue_busy = Queue(config.max_queue_size)
 # set up the background thread
 _putthread = threading.Thread(target=async_manager)
 # identification for debugging purposes
@@ -1402,22 +1411,23 @@ _putthread.setName('Put-Thread')
 _putthread.setDaemon(True)
 
 wrapper = _ModuleDeprecationWrapper(__name__)
-wrapper._add_deprecated_attr('ImagePage', FilePage)
+wrapper._add_deprecated_attr('ImagePage', FilePage, since='20140924',
+                             future_warning=True)
 wrapper._add_deprecated_attr(
-    'cookie_jar', replacement_name='pywikibot.comms.http.cookie_jar')
-wrapper._add_deprecated_attr(
-    'PageNotFound', _DeprecatedPageNotFoundError,
-    warning_message=('{0}.{1} is deprecated, and no longer '
-                     'used by pywikibot; use http.fetch() instead.'))
-wrapper._add_deprecated_attr(
-    'UserActionRefuse', _EmailUserError,
-    warning_message='UserActionRefuse is deprecated; '
-                    'use UserRightsError and/or NotEmailableError instead.')
+    'cookie_jar', replacement_name='pywikibot.comms.http.cookie_jar',
+    since='20150921')
 wrapper._add_deprecated_attr(
     'QuitKeyboardInterrupt', _QuitKeyboardInterrupt,
     warning_message='pywikibot.QuitKeyboardInterrupt is deprecated; '
-                    'use pywikibot.bot.QuitKeyboardInterrupt instead.')
+                    'use pywikibot.bot.QuitKeyboardInterrupt instead.',
+    since='20150619')
 wrapper._add_deprecated_attr(
-    'UploadWarning', _UploadWarning,
-    warning_message='pywikibot.UploadWarning is deprecated; '
-                    'use APISite.upload with a warning handler instead.')
+    'MediaWikiVersion', _MediaWikiVersion,
+    warning_message='pywikibot.MediaWikiVersion is deprecated; '
+                    'use pywikibot.tools.MediaWikiVersion instead.',
+    since='20180827')
+wrapper._add_deprecated_attr('__release__', __version__,
+                             replacement_name='pywikibot.__version__',
+                             since='20200707')
+wrapper._add_deprecated_attr('UnicodeMixin', replacement_name='',
+                             since='20200723', future_warning=True)

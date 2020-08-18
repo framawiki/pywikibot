@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """Family module for OpenStreetMap wiki."""
 #
-# (C) Pywikibot team, 2009-2015
+# (C) Pywikibot team, 2009-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot import family
 
 
@@ -21,4 +19,4 @@ class Family(family.SingleSiteFamily):
 
     def protocol(self, code):
         """Return https as the protocol for this family."""
-        return "https"
+        return 'https'

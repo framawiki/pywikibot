@@ -1,23 +1,23 @@
 # -*- coding: utf-8 -*-
 """Tests for archivebot scripts."""
 #
-# (C) Pywikibot team, 2016-2017
+# (C) Pywikibot team, 2014-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
+from contextlib import suppress
 from datetime import datetime, timedelta
 
 import pywikibot
 import pywikibot.page
 
 from pywikibot.textlib import TimeStripper
-from pywikibot.tools import suppress_warnings, StringTypes as basestring
+from pywikibot.tools import suppress_warnings
 
 from scripts import archivebot
 
 from tests.aspects import unittest, TestCase
+
 
 THREADS = {
     'als': 4, 'ar': 1, 'bar': 0, 'bg': 0, 'bjn': 1, 'bs': 0, 'ca': 5, 'ckb': 2,
@@ -92,11 +92,13 @@ class TestArchiveBotFunctions(TestCase):
         self.assertEqual(archivebot.str2time('7d'), archivebot.str2time('1w'))
         self.assertEqual(archivebot.str2time('3y'), timedelta(1096))
         self.assertEqual(archivebot.str2time('3y', date), timedelta(1095))
-        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2time, '4000@')
-        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2time, '$1')
+        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2time,
+                          '4000@')
+        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2time,
+                          '$1')
 
     def test_checkstr(self):
-        """Test for extracting key and duration from shorthand notation of durations."""
+        """Test for extracting key and duration from shorthand notation."""
         self.assertEqual(archivebot.checkstr('400s'), ('s', '400'))
         with suppress_warnings('Time period without qualifier', UserWarning):
             self.assertEqual(archivebot.checkstr('3000'), ('s', '3000'))
@@ -110,9 +112,24 @@ class TestArchiveBotFunctions(TestCase):
         self.assertEqual(archivebot.str2size('0'), (0, 'B'))
         self.assertEqual(archivebot.str2size('3000'), (3000, 'B'))
         self.assertEqual(archivebot.str2size('4 K'), (4096, 'B'))
+        self.assertEqual(archivebot.str2size('1 M'), (1048576, 'B'))
         self.assertEqual(archivebot.str2size('2T'), (2, 'T'))
-        # TODO: should probably be recognized 2000?
-        self.assertEqual(archivebot.str2size('2 000'), (2, 'B'))
+        self.assertEqual(archivebot.str2size('2 000'), (2000, 'B'))
+        self.assertEqual(archivebot.str2size('2 000B'), (2000, 'B'))
+        self.assertEqual(archivebot.str2size('2 000 B'), (2000, 'B'))
+
+    def test_str2size_failures(self):
+        """Test for rejecting of invalid shorthand notation of sizes."""
+        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2size,
+                          '4 KK')
+        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2size,
+                          'K4')
+        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2size,
+                          '4X')
+        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2size,
+                          '1 234 56')
+        self.assertRaises(archivebot.MalformedConfigError, archivebot.str2size,
+                          '1234 567')
 
 
 class TestArchiveBot(TestCase):
@@ -120,8 +137,7 @@ class TestArchiveBot(TestCase):
     """Test archivebot script on 40+ Wikipedia sites."""
 
     family = 'wikipedia'
-    sites = dict((code, {'family': 'wikipedia', 'code': code})
-                 for code in THREADS)
+    sites = {code: {'family': 'wikipedia', 'code': code} for code in THREADS}
 
     cached = True
 
@@ -136,30 +152,29 @@ class TestArchiveBot(TestCase):
         self.assertIsInstance(talk.archives, dict)
         self.assertIsInstance(talk.archived_threads, int)
         self.assertTrue(talk.archiver is None)
-        self.assertIsInstance(talk.header, basestring)
+        self.assertIsInstance(talk.header, str)
         self.assertIsInstance(talk.timestripper, TimeStripper)
 
         self.assertIsInstance(talk.threads, list)
         self.assertGreaterEqual(
             len(talk.threads), THREADS[code],
-            u'%d Threads found on %s,\n%d or more expected'
-            % (len(talk.threads), talk, THREADS[code]))
+            '{} Threads found on {},\n{} or more expected'
+            .format(len(talk.threads), talk, THREADS[code]))
 
         for thread in talk.threads:
             self.assertIsInstance(thread, archivebot.DiscussionThread)
-            self.assertIsInstance(thread.title, basestring)
-            self.assertIsInstance(thread.now, datetime)
-            self.assertEqual(thread.now, talk.now)
+            self.assertIsInstance(thread.title, str)
             self.assertIsInstance(thread.ts, TimeStripper)
             self.assertEqual(thread.ts, talk.timestripper)
-            self.assertIsInstance(thread.code, basestring)
+            self.assertIsInstance(thread.code, str)
             self.assertEqual(thread.code, talk.timestripper.site.code)
-            self.assertIsInstance(thread.content, basestring)
+            self.assertIsInstance(thread.content, str)
             try:
                 self.assertIsInstance(thread.timestamp, datetime)
             except AssertionError:
                 if thread.code not in self.expected_failures:
-                    pywikibot.output('code %s: %s' % (thread.code, thread.content))
+                    pywikibot.output('code {}: {}'
+                                     .format(thread.code, thread.content))
                 raise
 
     expected_failures = ['ar', 'eo', 'pdc', 'th']
@@ -187,8 +202,8 @@ class TestArchiveBotAfterDateUpdate(TestCase):
     """
 
     family = 'wikipedia'
-    sites = dict((code, {'family': 'wikipedia', 'code': code})
-                 for code in THREADS_WITH_UPDATED_FORMAT)
+    sites = {code: {'family': 'wikipedia', 'code': code}
+             for code in THREADS_WITH_UPDATED_FORMAT}
 
     cached = True
 
@@ -200,37 +215,162 @@ class TestArchiveBotAfterDateUpdate(TestCase):
         self.assertIsInstance(talk.archives, dict)
         self.assertIsInstance(talk.archived_threads, int)
         self.assertTrue(talk.archiver is None)
-        self.assertIsInstance(talk.header, basestring)
+        self.assertIsInstance(talk.header, str)
         self.assertIsInstance(talk.timestripper, TimeStripper)
 
         self.assertIsInstance(talk.threads, list)
         self.assertGreaterEqual(
             len(talk.threads), THREADS_WITH_UPDATED_FORMAT[code],
-            u'%d Threads found on %s,\n%d or more expected'
-            % (len(talk.threads), talk, THREADS_WITH_UPDATED_FORMAT[code]))
+            '{} Threads found on {},\n{} or more expected'
+            .format(len(talk.threads), talk,
+                    THREADS_WITH_UPDATED_FORMAT[code]))
 
         for thread in talk.threads:
             self.assertIsInstance(thread, archivebot.DiscussionThread)
-            self.assertIsInstance(thread.title, basestring)
-            self.assertIsInstance(thread.now, datetime)
-            self.assertEqual(thread.now, talk.now)
+            self.assertIsInstance(thread.title, str)
             self.assertIsInstance(thread.ts, TimeStripper)
             self.assertEqual(thread.ts, talk.timestripper)
-            self.assertIsInstance(thread.code, basestring)
+            self.assertIsInstance(thread.code, str)
             self.assertEqual(thread.code, talk.timestripper.site.code)
-            self.assertIsInstance(thread.content, basestring)
+            self.assertIsInstance(thread.content, str)
             try:
                 self.assertIsInstance(thread.timestamp, datetime)
             except AssertionError:
                 if thread.code not in self.expected_failures:
-                    pywikibot.output('code %s: %s' % (thread.code, thread.content))
+                    pywikibot.output('code {}: {}'
+                                     .format(thread.code, thread.content))
                 raise
 
     expected_failures = []
 
 
+class TestDiscussionPageObject(TestCase):
+
+    """Test DiscussionPage object."""
+
+    cached = True
+    family = 'wikipedia'
+    code = 'test'
+
+    def testTwoThreadsWithCommentedOutThread(self):
+        """Test recognizing two threads and ignoring a commented out thread.
+
+        Talk:For-pywikibot-archivebot must have::
+
+         {{User:MiszaBot/config
+         |archive = Talk:Main_Page/archive
+         |algo = old(30d)
+         }}
+         <!-- normal comments -->
+         == A ==
+         foo bar
+         <!--
+         == Z ==
+         foo bar bar
+         -->
+         == B ==
+         foo bar bar bar
+        """
+        site = self.get_site()
+        page = pywikibot.Page(site, 'Talk:For-pywikibot-archivebot')
+        tmpl = pywikibot.Page(site, 'User:MiszaBot/config')
+        archiver = archivebot.PageArchiver(
+            page=page, template=tmpl, salt='', force=False)
+        page = archivebot.DiscussionPage(page, archiver)
+        page.load_page()
+        self.assertEqual([x.title for x in page.threads], ['A', 'B'])
+
+    def testThreadsWithSubsections(self):
+        """Test recognizing threads with subsections.
+
+        Talk:For-pywikibot-archivebot/subsections must have::
+
+         {{User:MiszaBot/config
+         |archive = Talk:Main_Page/archive
+         |algo = old(30d)
+         }}
+         = Front matter =
+         placeholder
+         == A ==
+         foo bar
+         === A1 ===
+         foo bar bar
+         ==== A11 ====
+         foo
+         == B ==
+         foo bar bar bar
+        """
+        site = self.get_site()
+        page = pywikibot.Page(site, 'Talk:For-pywikibot-archivebot/testcase2')
+        tmpl = pywikibot.Page(site, 'User:MiszaBot/config')
+        archiver = archivebot.PageArchiver(
+            page=page, template=tmpl, salt='', force=False)
+        page = archivebot.DiscussionPage(page, archiver)
+        page.load_page()
+        self.assertEqual([x.title for x in page.threads], ['A', 'B'])
+
+
+class TestPageArchiverObject(TestCase):
+
+    """Test PageArchiver object."""
+
+    cached = True
+    family = 'wikipedia'
+    code = 'test'
+
+    def testLoadConfigInTemplateNamespace(self):
+        """Test loading of config with TEMPLATE_PAGE in Template ns.
+
+        Talk:For-pywikibot-archivebot-01 must have:
+
+         {{Pywikibot_archivebot
+         |archive = Talk:Main_Page/archive
+         |algo = old(30d)
+         }}
+        """
+        site = self.get_site()
+        page = pywikibot.Page(site, 'Talk:For-pywikibot-archivebot-01')
+
+        # TEMPLATE_PAGE assumed in ns=10 if ns is not explicit.
+        tmpl_with_ns = pywikibot.Page(site, 'Template:Pywikibot_archivebot')
+        tmpl_without_ns = pywikibot.Page(site, 'Pywikibot_archivebot', ns=10)
+
+        try:
+            archivebot.PageArchiver(page, tmpl_with_ns, '')
+        except pywikibot.Error as e:
+            self.fail('PageArchiver() raised {}!'.format(e))
+
+        try:
+            archivebot.PageArchiver(page, tmpl_without_ns, '')
+        except pywikibot.Error as e:
+            self.fail('PageArchiver() raised {}!'.format(e))
+
+    def testLoadConfigInOtherNamespace(self):
+        """Test loading of config with TEMPLATE_PAGE not in Template ns.
+
+        Talk:For-pywikibot-archivebot must have:
+
+         {{User:MiszaBot/config
+         |archive = Talk:Main_Page/archive
+         |algo = old(30d)
+         }}
+        """
+        site = self.get_site()
+        page = pywikibot.Page(site, 'Talk:For-pywikibot-archivebot')
+
+        tmpl_with_ns = pywikibot.Page(site, 'User:MiszaBot/config', ns=10)
+        tmpl_without_ns = pywikibot.Page(site, 'MiszaBot/config', ns=10)
+
+        # TEMPLATE_PAGE assumed in ns=10 if ns is not explicit.
+        try:
+            archivebot.PageArchiver(page, tmpl_with_ns, '')
+        except pywikibot.Error as e:
+            self.fail('PageArchiver() raised {}!'.format(e))
+
+        with self.assertRaises(archivebot.MissingConfigError):
+            archivebot.PageArchiver(page, tmpl_without_ns, '')
+
+
 if __name__ == '__main__':  # pragma: no cover
-    try:
+    with suppress(SystemExit):
         unittest.main()
-    except SystemExit:
-        pass

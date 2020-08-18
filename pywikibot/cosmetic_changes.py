@@ -5,7 +5,9 @@ This module can do slight modifications to tidy a wiki page's source code.
 
 The changes are not supposed to change the look of the rendered wiki page.
 
-If you wish to run this as an stand-alone script, use scripts/cosmetic_changes.py
+If you wish to run this as an stand-alone script, use:
+
+    scripts/cosmetic_changes.py
 
 For regular use, it is recommended to put this line into your user-config.py:
 
@@ -46,87 +48,119 @@ the given list by adding such lines to your user-config.py:
 
 or by adding a list to the given one:
 
-    cosmetic_changes_deny_script += ['your_script_name_1', 'your_script_name_2']
+    cosmetic_changes_deny_script += ['your_script_name_1',
+                                     'your_script_name_2']
 """
 #
-# (C) xqt, 2009-2016
-# (C) Pywikibot team, 2006-2017
+# (C) Pywikibot team, 2006-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import re
 
-from warnings import warn
+import pywikibot
+
+from pywikibot.page import url2unicode
+from pywikibot import textlib
+from pywikibot.textlib import (
+    _get_regexes, _MultiTemplateMatchBuilder, FILE_LINK_REGEX
+)
+from pywikibot.tools import (
+    deprecated, deprecated_args, first_lower, first_upper
+)
 
 try:
     import stdnum.isbn as stdnum_isbn
 except ImportError:
     stdnum_isbn = None
 
-import pywikibot
-
-from pywikibot import config, textlib
-from pywikibot.textlib import _MultiTemplateMatchBuilder, FILE_LINK_REGEX
-from pywikibot.tools import deprecated_args, first_lower, first_upper
-from pywikibot.tools import MediaWikiVersion
-
-
-# This is from interwiki.py;
-# move it to family file and implement global instances
+# Subpage templates. Must be in lower case,
+# whereas subpage itself must be case sensitive
+# This is also used by interwiki.py
+# TODO: Maybe move it to family file and implement global instances
 moved_links = {
-    'ca': (u'ús de la plantilla', u'/ús'),
-    'cs': (u'dokumentace', u'/doc'),
-    'de': (u'dokumentation', u'/Meta'),
-    'en': ([u'documentation',
-            u'template documentation',
-            u'template doc',
-            u'doc',
-            u'documentation, template'], u'/doc'),
-    'es': ([u'documentación', u'documentación de plantilla'], u'/doc'),
-    'fa': ([u'documentation', u'توضیحات', u'توضیحات الگو',
-            u'doc'], u'/توضیحات'),
-    'fr': (u'/documentation', u'/Documentation'),
-    'hu': (u'sablondokumentáció', u'/doc'),
-    'id': (u'template doc', u'/doc'),
-    'ja': (u'documentation', u'/doc'),
-    'ka': (u'თარგის ინფო', u'/ინფო'),
-    'ko': (u'documentation', u'/설명문서'),
-    'ms': (u'documentation', u'/doc'),
-    'pl': (u'dokumentacja', u'/opis'),
-    'pt': ([u'documentação', u'/doc'], u'/doc'),
-    'ro': (u'documentaţie', u'/doc'),
-    'ru': (u'doc', u'/doc'),
-    'sv': (u'dokumentation', u'/dok'),
-    'vi': (u'documentation', u'/doc'),
-    'zh': ([u'documentation', u'doc'], u'/doc'),
+    'ar': (['documentation', 'template documentation', 'شرح', 'توثيق'],
+           '/doc'),
+    'bn': ('documentation', '/doc'),
+    'ca': ('ús de la plantilla', '/ús'),
+    'cs': ('dokumentace', '/doc'),
+    'da': ('dokumentation', '/doc'),
+    'de': ('dokumentation', '/Meta'),
+    'dsb': (['dokumentacija', 'doc'], '/Dokumentacija'),
+    'en': (['documentation', 'template documentation', 'template doc',
+            'doc', 'documentation, template'], '/doc'),
+    'es': (['documentación', 'documentación de plantilla'], '/doc'),
+    'eu': ('txantiloi dokumentazioa', '/dok'),
+    'fa': (['documentation', 'template documentation', 'template doc',
+            'doc', 'توضیحات', 'زیرصفحه توضیحات'], '/doc'),
+    # fi: no idea how to handle this type of subpage at :Metasivu:
+    'fi': ('mallineohje', None),
+    'fr': (['/documentation', 'documentation', 'doc_modèle',
+            'documentation modèle', 'documentation modèle compliqué',
+            'documentation modèle en sous-page',
+            'documentation modèle compliqué en sous-page',
+            'documentation modèle utilisant les parserfunctions en sous-page',
+            ],
+           '/Documentation'),
+    'hsb': (['dokumentacija', 'doc'], '/Dokumentacija'),
+    'hu': ('sablondokumentáció', '/doc'),
+    'id': ('template doc', '/doc'),
+    'ilo': ('documentation', '/doc'),
+    'ja': ('documentation', '/doc'),
+    'ka': ('თარგის ინფო', '/ინფო'),
+    'ko': ('documentation', '/설명문서'),
+    'ms': ('documentation', '/doc'),
+    'no': ('dokumentasjon', '/dok'),
+    'nn': ('dokumentasjon', '/dok'),
+    'pl': ('dokumentacja', '/opis'),
+    'pt': (['documentação', '/doc'], '/doc'),
+    'ro': ('documentaţie', '/doc'),
+    'ru': ('doc', '/doc'),
+    'simple': (['documentation',
+                'template documentation',
+                'template doc',
+                'doc',
+                'documentation, template'], '/doc'),
+    'sk': ('dokumentácia', '/Dokumentácia'),
+    'sv': ('dokumentation', '/dok'),
+    'uk': (['документація', 'doc', 'documentation'], '/Документація'),
+    'ur': (['دستاویز', 'توثيق', 'شرح', 'توضیحات',
+            'documentation', 'template doc', 'doc',
+            'documentation, template'], '/doc'),
+    'vi': ('documentation', '/doc'),
+    'zh': (['documentation', 'doc'], '/doc'),
 }
 
 # Template which should be replaced or removed.
 # Use a list with two entries. The first entry will be replaced by the second.
 # Examples:
 # For removing {{Foo}}, the list must be:
-#           (u'Foo', None),
+#           ('Foo', None),
 #
 # The following also works:
-#           (u'Foo', ''),
+#           ('Foo', ''),
 #
 # For replacing {{Foo}} with {{Bar}} the list must be:
-#           (u'Foo', u'Bar'),
+#           ('Foo', 'Bar'),
 #
 # This also removes all template parameters of {{Foo}}
 # For replacing {{Foo}} with {{Bar}} but keep the template
 # parameters in its original order, please use:
-#           (u'Foo', u'Bar\g<parameters>'),
+#           ('Foo', 'Bar\\g<parameters>'),
 
 deprecatedTemplates = {
     'wikipedia': {
         'de': [
-            (u'Belege', u'Belege fehlen\\g<parameters>'),
-            (u'Quelle', u'Belege fehlen\\g<parameters>'),
-            (u'Quellen', u'Belege fehlen\\g<parameters>'),
-            (u'Quellen fehlen', u'Belege fehlen\\g<parameters>'),
+            ('Belege', 'Belege fehlen\\g<parameters>'),
+            ('Quelle', 'Belege fehlen\\g<parameters>'),
+            ('Quellen', 'Belege fehlen\\g<parameters>'),
+            ('Quellen fehlen', 'Belege fehlen\\g<parameters>'),
+        ],
+        'ur': [
+            ('Infobox former country',
+             'خانہ معلومات سابقہ ملک\\g<parameters>'),
+            ('Infobox Former Country',
+             'خانہ معلومات سابقہ ملک\\g<parameters>'),
         ],
     }
 }
@@ -139,48 +173,20 @@ CANCEL_MATCH = 3
 
 def _format_isbn_match(match, strict=True):
     """Helper function to validate and format a single matched ISBN."""
-    scripts_isbn = None
-
     if not stdnum_isbn:
-        # For backwards compatibility, if stdnum.isbn is not available
-        # attempt loading scripts.isbn as an alternative implementation.
-        try:
-            import scripts.isbn as scripts_isbn
-        except ImportError:
-            raise NotImplementedError(
-                'ISBN functionality not available. Install stdnum package.')
-
-        warn('package stdnum.isbn not found; using scripts.isbn',
-             ImportWarning)
+        raise NotImplementedError(
+            'ISBN functionality not available. Install stdnum package.')
 
     isbn = match.group('code')
-    if stdnum_isbn:
-        try:
-            stdnum_isbn.validate(isbn)
-        except stdnum_isbn.ValidationError as e:
-            if strict:
-                raise
-            pywikibot.log('ISBN "%s" validation error: %s' % (isbn, e))
-            return isbn
+    try:
+        stdnum_isbn.validate(isbn)
+    except stdnum_isbn.ValidationError as e:
+        if strict:
+            raise
+        pywikibot.log('ISBN "%s" validation error: %s' % (isbn, e))
+        return isbn
 
-        return stdnum_isbn.format(isbn)
-    else:
-        try:
-            scripts_isbn.is_valid(isbn)
-        except scripts_isbn.InvalidIsbnException as e:
-            if strict:
-                raise
-            pywikibot.log('ISBN "%s" validation error: %s' % (isbn, e))
-            return isbn
-
-        isbn = scripts_isbn.getIsbn(isbn)
-        try:
-            isbn.format()
-        except scripts_isbn.InvalidIsbnException as e:
-            if strict:
-                raise
-            pywikibot.log('ISBN "%s" validation error: %s' % (isbn, e))
-        return isbn.code
+    return stdnum_isbn.format(isbn)
 
 
 def _reformat_ISBNs(text, strict=True):
@@ -192,26 +198,27 @@ def _reformat_ISBNs(text, strict=True):
         text, lambda match: _format_isbn_match(match, strict=strict))
 
 
-class CosmeticChangesToolkit(object):
+class CosmeticChangesToolkit:
 
     """Cosmetic changes toolkit."""
 
-    @deprecated_args(debug='diff', redirect=None)
-    def __init__(self, site, diff=False, namespace=None, pageTitle=None,
+    @deprecated_args(debug='show_diff', redirect=None, diff='show_diff')
+    def __init__(self, site, show_diff=False, namespace=None, pageTitle=None,
                  ignore=CANCEL_ALL):
-        """Constructor."""
+        """Initializer."""
         self.site = site
-        self.diff = diff
+        self.show_diff = show_diff
         try:
             self.namespace = self.site.namespaces.resolve(namespace).pop(0)
         except (KeyError, TypeError, IndexError):
-            raise ValueError('%s needs a valid namespace' % self.__class__.__name__)
+            raise ValueError('{0} needs a valid namespace'
+                             .format(self.__class__.__name__))
         self.template = (self.namespace == 10)
         self.talkpage = self.namespace >= 0 and self.namespace % 2 == 1
         self.title = pageTitle
         self.ignore = ignore
 
-        self.common_methods = (
+        self.common_methods = [
             self.commonsfiledesc,
             self.fixSelfInterwiki,
             self.standardizePageFooter,
@@ -222,8 +229,8 @@ class CosmeticChangesToolkit(object):
             self.translateAndCapitalizeNamespaces,
             self.translateMagicWords,
             self.replaceDeprecatedTemplates,
-            # FIXME: fix bugs and re-enable
-            # self.resolveHtmlEntities,
+            self.resolveHtmlEntities,
+            self.removeEmptySections,
             self.removeUselessSpaces,
             self.removeNonBreakingSpaceBeforePercent,
 
@@ -233,14 +240,27 @@ class CosmeticChangesToolkit(object):
             self.fixTypo,
 
             self.fixArabicLetters,
-            # FIXME: T144288
-            # self.fix_ISBN,
-        )
+        ]
+        if stdnum_isbn:
+            self.common_methods.append(self.fix_ISBN)
+
+    @property
+    @deprecated('show_diff', since='20200415')
+    def diff(self):
+        """CosmeticChangesToolkit.diff attribute getter."""
+        return self.show_diff
+
+    @diff.setter
+    @deprecated('show_diff', since='20200415')
+    def diff(self, value):
+        """CosmeticChangesToolkit.diff attribute setter."""
+        self.show_diff = bool(value)
 
     @classmethod
-    def from_page(cls, page, diff, ignore):
+    @deprecated_args(diff='show_diff')
+    def from_page(cls, page, show_diff=False, ignore=CANCEL_ALL):
         """Create toolkit based on the page."""
-        return cls(page.site, diff=diff, namespace=page.namespace(),
+        return cls(page.site, show_diff=show_diff, namespace=page.namespace(),
                    pageTitle=page.title(), ignore=ignore)
 
     def safe_execute(self, method, text):
@@ -250,8 +270,8 @@ class CosmeticChangesToolkit(object):
             result = method(text)
         except Exception as e:
             if self.ignore == CANCEL_METHOD:
-                pywikibot.warning(u'Unable to perform "{0}" on "{1}"!'.format(
-                    method.__name__, self.title))
+                pywikibot.warning('Unable to perform "{}" on "{}"!'
+                                  .format(method.__name__, self.title))
                 pywikibot.exception(e)
             else:
                 raise
@@ -269,13 +289,14 @@ class CosmeticChangesToolkit(object):
             new_text = self._change(text)
         except Exception as e:
             if self.ignore == CANCEL_PAGE:
-                pywikibot.warning(u'Skipped "{0}", because an error occurred.'.format(self.title))
+                pywikibot.warning('Skipped "{0}", because an error occurred.'
+                                  .format(self.title))
                 pywikibot.exception(e)
                 return False
             else:
                 raise
         else:
-            if self.diff:
+            if self.show_diff:
                 pywikibot.showDiff(text, new_text)
             return new_text
 
@@ -295,64 +316,62 @@ class CosmeticChangesToolkit(object):
         """
         Standardize page footer.
 
-        Makes sure that interwiki links and categories are put to the correct
-        position and into the right order. This combines the old instances
-        standardizeInterwiki and standardizeCategories.
-        The page footer has the following section in that sequence:
+        Makes sure that interwiki links and categories are put
+        into the correct position and into the right order. This
+        combines the old instances of standardizeInterwiki
+        and standardizeCategories.
+
+        The page footer consists of the following parts
+        in that sequence:
         1. categories
-        2. ## TODO: template beyond categories ##
-        3. additional information depending on local site policy
-        4. interwiki links
-
+        2. additional information depending on the local site policy
+        3. interwiki
         """
-        categories = None
-        interwikiLinks = None
+        categories = []
+        interwiki_links = []
 
-        # Pywikibot is no longer allowed to touch categories on the
-        # German Wikipedia. See
-        # https://de.wikipedia.org/wiki/Hilfe_Diskussion:Personendaten/Archiv/1#Position_der_Personendaten_am_.22Artikelende.22
-        # ignoring nn-wiki of cause of the comment line above iw section
-        if not self.template and '{{Personendaten' not in text and \
-           '{{SORTIERUNG' not in text and '{{DEFAULTSORT' not in text and \
-           self.site.code not in ('et', 'it', 'bg', 'ru'):
+        # get categories
+        if not self.template:
             categories = textlib.getCategoryLinks(text, site=self.site)
 
-        if not self.talkpage:  # and pywikibot.calledModuleName() <> 'interwiki':
+        if not self.talkpage:
             subpage = False
             if self.template:
-                loc = None
                 try:
                     tmpl, loc = moved_links[self.site.code]
                     del tmpl
                 except KeyError:
-                    pass
+                    loc = None
                 if loc is not None and loc in self.title:
                     subpage = True
-            interwikiLinks = textlib.getLanguageLinks(
+
+            # get interwiki
+            interwiki_links = textlib.getLanguageLinks(
                 text, insite=self.site, template_subpage=subpage)
 
-            # Removing the interwiki
+            # remove interwiki
             text = textlib.removeLanguageLinks(text, site=self.site)
 
-        # Adding categories
+        # add categories, main to top
         if categories:
-            # TODO: Sorting categories in alphabetic order.
-            # e.g. using categories.sort()
-
-            # TODO: Taking main cats to top
-            #   for name in categories:
-            #       if (re.search(u"(.+?)\|(.{,1}?)",name.title()) or
-            #               name.title() == name.title().split(":")[0] + title):
-            #            categories.remove(name)
-            #            categories.insert(0, name)
+            # TODO: Sort categories in alphabetic order, e.g. using
+            # categories.sort()? (T100265)
+            # TODO: Get main categories from Wikidata?
+            main = pywikibot.Category(self.site, 'Category:' + self.title,
+                                      sort_key=' ')
+            if main in categories:
+                categories.pop(categories.index(main))
+                categories.insert(0, main)
             text = textlib.replaceCategoryLinks(text, categories,
                                                 site=self.site)
-        # Adding the interwiki
-        if interwikiLinks:
-            text = textlib.replaceLanguageLinks(text, interwikiLinks,
+
+        # add interwiki
+        if interwiki_links:
+            text = textlib.replaceLanguageLinks(text, interwiki_links,
                                                 site=self.site,
                                                 template=self.template,
                                                 template_subpage=subpage)
+
         return text
 
     def translateAndCapitalizeNamespaces(self, text):
@@ -360,44 +379,60 @@ class CosmeticChangesToolkit(object):
         # arz uses english stylish codes
         if self.site.sitename == 'wikipedia:arz':
             return text
-        family = self.site.family
         # wiki links aren't parsed here.
         exceptions = ['nowiki', 'comment', 'math', 'pre']
 
         for namespace in self.site.namespaces.values():
-            if namespace.id in (0, 2, 3):
+            if namespace == 0:
                 # skip main (article) namespace
-                # skip user namespace, maybe gender is used
                 continue
             # a clone is needed. Won't change the namespace dict
             namespaces = list(namespace)
-            thisNs = namespaces.pop(0)
-            if namespace.id == 6 and family.name == 'wikipedia':
-                if self.site.code in ('en', 'fr') and \
-                   MediaWikiVersion(self.site.version()) >= MediaWikiVersion('1.14'):
+            if namespace == 6 and self.site.family.name == 'wikipedia':
+                if self.site.code in ('en', 'fr') \
+                        and self.site.mw_version >= '1.14':
                     # do not change "Image" on en-wiki and fr-wiki
-                    assert u'Image' in namespaces
-                    namespaces.remove(u'Image')
+                    assert 'Image' in namespaces
+                    namespaces.remove('Image')
                 if self.site.code == 'hu':
                     # do not change "Kép" on hu-wiki
-                    assert u'Kép' in namespaces
-                    namespaces.remove(u'Kép')
+                    assert 'Kép' in namespaces
+                    namespaces.remove('Kép')
                 elif self.site.code == 'pt':
-                    # TODO: bug T57242
-                    continue
+                    # use "Imagem" by default on pt-wiki (per T57242)
+                    assert 'Imagem' in namespaces
+                    namespaces.insert(
+                        0, namespaces.pop(namespaces.index('Imagem')))
+            # final namespace variant
+            final_ns = namespaces.pop(0)
+            if namespace in (2, 3):
+                # skip localized user namespace, maybe gender is used
+                namespaces = ['User' if namespace == 2 else 'User talk']
             # lowerspaced and underscored namespaces
-            for i in range(len(namespaces)):
-                item = namespaces[i].replace(' ', '[ _]')
-                item = u'[%s%s]' % (item[0], item[0].lower()) + item[1:]
+            for i, item in enumerate(namespaces):
+                item = item.replace(' ', '[ _]')
+                item = '[%s%s]' % (item[0], item[0].lower()) + item[1:]
                 namespaces[i] = item
-            namespaces.append(first_lower(thisNs))
-            if thisNs and namespaces:
-                text = textlib.replaceExcept(
-                    text,
-                    r'\[\[\s*(%s) *:(?P<nameAndLabel>.*?)\]\]'
-                    % '|'.join(namespaces),
-                    r'[[%s:\g<nameAndLabel>]]' % thisNs,
-                    exceptions)
+            namespaces.append(first_lower(final_ns))
+            if final_ns and namespaces:
+                if self.site.sitename == 'wikipedia:pt' and namespace == 6:
+                    # only change on these file extensions (per T57242)
+                    extensions = ('png', 'gif', 'jpg', 'jpeg', 'svg', 'tiff',
+                                  'tif')
+                    text = textlib.replaceExcept(
+                        text,
+                        r'\[\[\s*({}) *:(?P<name>[^\|\]]*?\.({}))'
+                        r'(?P<label>.*?)\]\]'
+                        .format('|'.join(namespaces), '|'.join(extensions)),
+                        r'[[{}:\g<name>\g<label>]]'.format(final_ns),
+                        exceptions)
+                else:
+                    text = textlib.replaceExcept(
+                        text,
+                        r'\[\[\s*(%s) *:(?P<nameAndLabel>.*?)\]\]'
+                        % '|'.join(namespaces),
+                        r'[[%s:\g<nameAndLabel>]]' % final_ns,
+                        exceptions)
         return text
 
     def translateMagicWords(self, text):
@@ -405,31 +440,45 @@ class CosmeticChangesToolkit(object):
         # not wanted at ru
         # arz uses english stylish codes
         # no need to run on English wikis
-        if self.site.code not in ['arz', 'en', 'ru']:
-            def replace_magicword(match):
-                split = match.group().split('|')
-                # push ']]' out and re-add below
-                split[-1] = split[-1][:-2]
-                for magicword in ['img_thumbnail', 'img_left', 'img_center',
-                                  'img_right', 'img_none', 'img_framed',
-                                  'img_frameless', 'img_border', 'img_upright',
-                                  ]:
-                    aliases = list(self.site.getmagicwords(magicword))
-                    preferred = aliases.pop(0)
-                    if not aliases:
-                        continue
-                    split[1:] = list(map(
-                        lambda x: preferred if x.strip() in aliases else x,
-                        split[1:]))
-                return '|'.join(split) + ']]'
+        if self.site.code in ['arz', 'en', 'ru']:
+            return text
 
-            exceptions = ['nowiki', 'comment', 'math', 'pre', 'source']
-            regex = re.compile(
-                FILE_LINK_REGEX % '|'.join(self.site.namespaces[6]),
-                flags=re.X)
-            text = textlib.replaceExcept(text, regex, replace_magicword,
-                                         exceptions)
-        return text
+        def init_cache():
+            for magicword in ('img_thumbnail', 'img_left', 'img_center',
+                              'img_right', 'img_none', 'img_framed',
+                              'img_frameless', 'img_border', 'img_upright',
+                              'img_baseline', 'img_sub', 'img_super',
+                              'img_top', 'img_text_top', 'img_middle',
+                              'img_bottom', 'img_text_bottom'):
+                aliases = self.site.getmagicwords(magicword)
+                if len(aliases) > 1:
+                    cache.update((alias, aliases[0]) for alias in aliases[1:]
+                                 if '$1' not in alias)
+            if not cache:
+                cache[False] = True  # signal there is nothing to replace
+
+        def replace_magicword(match):
+            if cache.get(False):
+                return match.group()
+            split = match.group().split('|')
+            if len(split) == 1:
+                return match.group()
+
+            if not cache:
+                init_cache()
+
+            # push ']]' out and re-add below
+            split[-1] = split[-1][:-2]
+            return '{}|{}]]'.format(
+                split[0], '|'.join(cache.get(x.strip(), x) for x in split[1:]))
+
+        cache = {}
+        exceptions = ['nowiki', 'comment', 'pre', 'source']
+        regex = re.compile(
+            FILE_LINK_REGEX % '|'.join(self.site.namespaces[6]),
+            flags=re.X)
+        return textlib.replaceExcept(
+            text, regex, replace_magicword, exceptions)
 
     def cleanUpLinks(self, text):
         """Tidy up wikilinks found in a string.
@@ -465,111 +514,109 @@ class CosmeticChangesToolkit(object):
             except ValueError:  # T111513
                 is_interwiki = True
 
-            if not is_interwiki:
-                # The link looks like this:
-                # [[page_title|link_text]]trailing_chars
-                # We only work on namespace 0 because pipes and linktrails work
-                # differently for images and categories.
-                page = pywikibot.Page(pywikibot.Link(titleWithSection,
-                                                     self.site))
-                try:
-                    namespace = page.namespace()
-                except pywikibot.InvalidTitle:
-                    return match.group()
-                if namespace == 0:
-                    # Replace underlines by spaces, also multiple underlines
-                    titleWithSection = re.sub('_+', ' ', titleWithSection)
-                    # Remove double spaces
-                    titleWithSection = re.sub('  +', ' ', titleWithSection)
-                    # Remove unnecessary leading spaces from title,
-                    # but remember if we did this because we eventually want
-                    # to re-add it outside of the link later.
-                    titleLength = len(titleWithSection)
-                    titleWithSection = titleWithSection.lstrip()
-                    hadLeadingSpaces = (len(titleWithSection) != titleLength)
-                    hadTrailingSpaces = False
-                    # Remove unnecessary trailing spaces from title,
-                    # but remember if we did this because it may affect
-                    # the linktrail and because we eventually want to
-                    # re-add it outside of the link later.
-                    if not trailingChars:
-                        titleLength = len(titleWithSection)
-                        titleWithSection = titleWithSection.rstrip()
-                        hadTrailingSpaces = (len(titleWithSection) !=
-                                             titleLength)
+            if is_interwiki:
+                return match.group()
 
-                    # Convert URL-encoded characters to unicode
-                    from pywikibot.page import url2unicode
-                    titleWithSection = url2unicode(titleWithSection,
-                                                   encodings=self.site)
+            # The link looks like this:
+            # [[page_title|link_text]]trailing_chars
+            # We only work on namespace 0 because pipes and linktrails work
+            # differently for images and categories.
+            page = pywikibot.Page(pywikibot.Link(titleWithSection, self.site))
+            try:
+                in_main_namespace = page.namespace() == 0
+            except pywikibot.InvalidTitle:
+                in_main_namespace = False
+            if not in_main_namespace:
+                return match.group()
 
-                    if titleWithSection == '':
-                        # just skip empty links.
-                        return match.group()
+            # Replace underlines by spaces, also multiple underlines
+            titleWithSection = re.sub('_+', ' ', titleWithSection)
+            # Remove double spaces
+            titleWithSection = re.sub('  +', ' ', titleWithSection)
+            # Remove unnecessary leading spaces from title,
+            # but remember if we did this because we eventually want
+            # to re-add it outside of the link later.
+            titleLength = len(titleWithSection)
+            titleWithSection = titleWithSection.lstrip()
+            hadLeadingSpaces = len(titleWithSection) != titleLength
+            hadTrailingSpaces = False
+            # Remove unnecessary trailing spaces from title,
+            # but remember if we did this because it may affect
+            # the linktrail and because we eventually want to
+            # re-add it outside of the link later.
+            if not trailingChars:
+                titleLength = len(titleWithSection)
+                titleWithSection = titleWithSection.rstrip()
+                hadTrailingSpaces = len(titleWithSection) != titleLength
 
-                    # Remove unnecessary initial and final spaces from label.
-                    # Please note that some editors prefer spaces around pipes.
-                    # (See [[en:Wikipedia:Semi-bots]]). We remove them anyway.
-                    if label is not None:
-                        # Remove unnecessary leading spaces from label,
-                        # but remember if we did this because we want
-                        # to re-add it outside of the link later.
-                        labelLength = len(label)
-                        label = label.lstrip()
-                        hadLeadingSpaces = (len(label) != labelLength)
-                        # Remove unnecessary trailing spaces from label,
-                        # but remember if we did this because it affects
-                        # the linktrail.
-                        if not trailingChars:
-                            labelLength = len(label)
-                            label = label.rstrip()
-                            hadTrailingSpaces = (len(label) != labelLength)
-                    else:
-                        label = titleWithSection
-                    if trailingChars:
-                        label += trailingChars
+            # Convert URL-encoded characters to unicode
+            titleWithSection = url2unicode(titleWithSection,
+                                           encodings=self.site)
 
-                    if self.site.siteinfo['case'] == 'first-letter':
-                        firstcase_title = first_lower(titleWithSection)
-                        firstcase_label = first_lower(label)
-                    else:
-                        firstcase_title = titleWithSection
-                        firstcase_label = label
+            if not titleWithSection:
+                # just skip empty links.
+                return match.group()
 
-                    if firstcase_label == firstcase_title:
-                        newLink = '[[%s]]' % label
-                    # Check if we can create a link with trailing characters
-                    # instead of a pipelink
-                    elif (firstcase_label.startswith(firstcase_title) and
-                          trailR.sub('', label[len(titleWithSection):]) == ''):
-                        newLink = '[[%s]]%s' % (
-                            label[:len(titleWithSection)],
-                            label[len(titleWithSection):])
+            # Remove unnecessary initial and final spaces from label.
+            # Please note that some editors prefer spaces around pipes.
+            # (See [[en:Wikipedia:Semi-bots]]). We remove them anyway.
+            if label is not None:
+                # Remove unnecessary leading spaces from label,
+                # but remember if we did this because we want
+                # to re-add it outside of the link later.
+                labelLength = len(label)
+                label = label.lstrip()
+                hadLeadingSpaces = len(label) != labelLength
+                # Remove unnecessary trailing spaces from label,
+                # but remember if we did this because it affects
+                # the linktrail.
+                if not trailingChars:
+                    labelLength = len(label)
+                    label = label.rstrip()
+                    hadTrailingSpaces = len(label) != labelLength
+            else:
+                label = titleWithSection
+            if trailingChars:
+                label += trailingChars
 
-                    else:
-                        # Try to capitalize the first letter of the title.
-                        # Not useful for languages that don't capitalize nouns.
-                        # TODO: Add a configuration variable for each site,
-                        # which determines if the link target is written in
-                        # uppercase
-                        if self.site.sitename == 'wikipedia:de':
-                            titleWithSection = first_upper(titleWithSection)
-                        newLink = "[[%s|%s]]" % (titleWithSection, label)
-                    # re-add spaces that were pulled out of the link.
-                    # Examples:
-                    #   text[[ title ]]text        -> text [[title]] text
-                    #   text[[ title | name ]]text -> text [[title|name]] text
-                    #   text[[ title |name]]text   -> text[[title|name]]text
-                    #   text[[title| name]]text    -> text [[title|name]]text
-                    if hadLeadingSpaces and not newline:
-                        newLink = ' ' + newLink
-                    if hadTrailingSpaces:
-                        newLink = newLink + ' '
-                    if newline:
-                        newLink = newline + newLink
-                    return newLink
-            # don't change anything
-            return match.group()
+            if self.site.siteinfo['case'] == 'first-letter':
+                firstcase_title = first_lower(titleWithSection)
+                firstcase_label = first_lower(label)
+            else:
+                firstcase_title = titleWithSection
+                firstcase_label = label
+
+            if firstcase_label == firstcase_title:
+                newLink = '[[%s]]' % label
+            # Check if we can create a link with trailing characters
+            # instead of a pipelink
+            elif (firstcase_label.startswith(firstcase_title)
+                  and trailR.sub('', label[len(titleWithSection):]) == ''):
+                newLink = '[[%s]]%s' % (label[:len(titleWithSection)],
+                                        label[len(titleWithSection):])
+
+            else:
+                # Try to capitalize the first letter of the title.
+                # Not useful for languages that don't capitalize nouns.
+                # TODO: Add a configuration variable for each site,
+                # which determines if the link target is written in
+                # uppercase
+                if self.site.sitename == 'wikipedia:de':
+                    titleWithSection = first_upper(titleWithSection)
+                newLink = '[[%s|%s]]' % (titleWithSection, label)
+            # re-add spaces that were pulled out of the link.
+            # Examples:
+            #   text[[ title ]]text        -> text [[title]] text
+            #   text[[ title | name ]]text -> text [[title|name]] text
+            #   text[[ title |name]]text   -> text[[title|name]]text
+            #   text[[title| name]]text    -> text [[title|name]]text
+            if hadLeadingSpaces and not newline:
+                newLink = ' ' + newLink
+            if hadTrailingSpaces:
+                newLink = newLink + ' '
+            if newline:
+                newLink = newline + newLink
+            return newLink
 
         trailR = re.compile(self.site.linktrail())
     # The regular expression which finds links. Results consist of four groups:
@@ -581,8 +628,8 @@ class CosmeticChangesToolkit(object):
     # note that the definition of 'letter' varies from language to language.
         linkR = re.compile(
             r'(?P<newline>[\n]*)\[\[(?P<titleWithSection>[^\]\|]+)'
-            r'(\|(?P<label>[^\]\|]*))?\]\](?P<linktrail>' +
-            self.site.linktrail() + ')')
+            r'(\|(?P<label>[^\]\|]*))?\]\](?P<linktrail>'
+            + self.site.linktrail() + ')')
 
         text = textlib.replaceExcept(text, linkR, handleOneLink,
                                      ['comment', 'math', 'nowiki', 'pre',
@@ -593,9 +640,9 @@ class CosmeticChangesToolkit(object):
         """Replace HTML entities with unicode."""
         ignore = [
             38,     # Ampersand (&amp;)
-            39,     # Single quotation mark (&quot;) - bug T26093
+            39,     # Single quotation mark (&quot;) per T26093
             60,     # Less than (&lt;)
-            62,     # Great than (&gt;)
+            62,     # Greater than (&gt;)
             91,     # Opening square bracket ([)
                     # - sometimes used intentionally inside links
             93,     # Closing square bracket (])
@@ -609,17 +656,66 @@ class CosmeticChangesToolkit(object):
             8207,   # Right-to-left mark (&rtl;)
         ]
         if self.template:
-            ignore += [58]
-        text = pywikibot.html2unicode(text, ignore=ignore)
+            ignore += [32]  # Space ( )
+            ignore += [58]  # Colon (:)
+        # TODO: T254350 - what other extension tags should be avoided?
+        # (graph, math, score, timeline, etc.)
+        text = pywikibot.html2unicode(
+            text, ignore=ignore, exceptions=['comment', 'source'])
         return text
+
+    def removeEmptySections(self, text):
+        """Cleanup empty sections."""
+        # userspace contains article stubs without nobots/in use templates
+        if self.namespace == 2:
+            return text
+
+        skippings = ['comment', 'category']
+        skip_regexes = _get_regexes(skippings, self.site)
+        # site defined templates
+        skip_templates = {
+            'cs': ('Pahýl[ _]část',),  # stub section
+        }
+        if self.site.code in skip_templates:
+            for template in skip_templates[self.site.code]:
+                skip_regexes.append(
+                    re.compile(r'\{\{\s*%s\s*\}\}' % template, re.I))
+        # empty lists
+        skip_regexes.append(re.compile(r'(?m)^[\*#] *$'))
+
+        # get stripped sections
+        stripped_text = textlib.removeLanguageLinks(text, self.site, '\n')
+        for reg in skip_regexes:
+            stripped_text = reg.sub(r'', stripped_text)
+        strip_sections = textlib.extract_sections(
+            stripped_text, self.site)[1]
+
+        # get proper sections
+        header, sections, footer = textlib.extract_sections(text, self.site)
+
+        # iterate stripped sections and create a new page body
+        new_body = []
+        for i, strip_section in enumerate(strip_sections):
+            current_heading = sections[i][0]
+            try:
+                next_heading = sections[i + 1][0]
+            except IndexError:
+                next_heading = ''
+            current_dep = (len(current_heading)
+                           - len(current_heading.lstrip('=')))
+            next_dep = len(next_heading) - len(next_heading.lstrip('='))
+            if strip_section[1].strip() or current_dep < next_dep:
+                new_body.extend(sections[i])
+        return header + ''.join(new_body) + footer
 
     def removeUselessSpaces(self, text):
         """Cleanup multiple or trailing spaces."""
-        exceptions = ['comment', 'math', 'nowiki', 'pre', 'startspace', 'table']
+        exceptions = ['comment', 'math', 'nowiki', 'pre', 'startspace',
+                      'source', 'table']
         if self.site.sitename != 'wikipedia:cs':
             exceptions.append('template')
-        text = textlib.replaceExcept(text, r'(?m)[\t ]+( |$)', r'\1', exceptions,
-                                     site=self.site)
+        text = textlib.replaceExcept(text, r'(?m)[\t ]+( |$)', r'\1',
+                                     exceptions, site=self.site)
         return text
 
     def removeNonBreakingSpaceBeforePercent(self, text):
@@ -630,8 +726,8 @@ class CosmeticChangesToolkit(object):
         front of a percent sign, so it is no longer required to place it
         manually.
         """
-        text = textlib.replaceExcept(text, r'(\d)&nbsp;%', r'\1 %',
-                                     ['timeline'])
+        text = textlib.replaceExcept(
+            text, r'(\d)&(?:nbsp|#160|#x[Aa]0);%', r'\1 %', ['timeline'])
         return text
 
     def cleanUpSectionHeaders(self, text):
@@ -649,8 +745,8 @@ class CosmeticChangesToolkit(object):
             return text
         return textlib.replaceExcept(
             text,
-            r'(?m)^(={1,7}) *(?P<title>[^=]+?) *\1 *\r?\n',
-            r'\1 \g<title> \1%s' % config.LS,
+            r'(?m)^(={1,6})[ \t]*(?P<title>.*[^\s=])[ \t]*\1[ \t]*\r?\n',
+            r'\1 \g<title> \1\n',
             ['comment', 'math', 'nowiki', 'pre'])
 
     def putSpacesInLists(self, text):
@@ -658,15 +754,16 @@ class CosmeticChangesToolkit(object):
         Add a space between the * or # and the text.
 
         NOTE: This space is recommended in the syntax help on the English,
-        German, and French Wikipedia. It might be that it is not wanted on other
-        wikis. If there are any complaints, please file a bug report.
+        German, and French Wikipedia. It might be that it is not wanted on
+        other wikis. If there are any complaints, please file a bug report.
         """
         if not self.template:
-            exceptions = ['comment', 'math', 'nowiki', 'pre', 'source', 'template',
-                          'timeline', self.site.redirectRegex()]
+            exceptions = ['comment', 'math', 'nowiki', 'pre', 'source',
+                          'template', 'timeline', self.site.redirectRegex()]
             text = textlib.replaceExcept(
                 text,
-                r'(?m)^(?P<bullet>[:;]*(\*+|#+)[:;\*#]*)(?P<char>[^\s\*#:;].+?)',
+                r'(?m)'
+                r'^(?P<bullet>[:;]*(\*+|#+)[:;\*#]*)(?P<char>[^\s\*#:;].+?)',
                 r'\g<bullet> \g<char>',
                 exceptions)
         return text
@@ -680,8 +777,7 @@ class CosmeticChangesToolkit(object):
            self.site.code in deprecatedTemplates[self.site.family.name]:
             for template in deprecatedTemplates[
                     self.site.family.name][self.site.code]:
-                old = template[0]
-                new = template[1]
+                old, new = template
                 if new is None:
                     new = ''
                 else:
@@ -700,8 +796,8 @@ class CosmeticChangesToolkit(object):
         def replace_link(match):
             """Create a string to replace a single link."""
             replacement = '[['
-            if re.match(r'(?:' + '|'.join(list(self.site.namespaces[6]) +
-                        list(self.site.namespaces[14])) + '):',
+            if re.match(r'(?:' + '|'.join(list(self.site.namespaces[6])
+                        + list(self.site.namespaces[14])) + '):',
                         match.group('link')):
                 replacement += ':'
             replacement += match.group('link')
@@ -797,7 +893,8 @@ class CosmeticChangesToolkit(object):
 
     def fixReferences(self, text):
         """Fix references tags."""
-        # See also https://en.wikipedia.org/wiki/User:AnomieBOT/source/tasks/OrphanReferenceFixer.pm
+        # See also
+        # https://en.wikipedia.org/wiki/User:AnomieBOT/source/tasks/OrphanReferenceFixer.pm
         exceptions = ['nowiki', 'comment', 'math', 'pre', 'source',
                       'startspace']
 
@@ -825,18 +922,20 @@ class CosmeticChangesToolkit(object):
     def fixTypo(self, text):
         """Fix units."""
         exceptions = ['nowiki', 'comment', 'math', 'pre', 'source',
-                      'startspace', 'gallery', 'hyperlink', 'interwiki', 'link']
+                      'startspace', 'gallery', 'hyperlink', 'interwiki',
+                      'link']
         # change <number> ccm -> <number> cm³
         text = textlib.replaceExcept(text, r'(\d)\s*(?:&nbsp;)?ccm',
                                      r'\1&nbsp;cm³', exceptions,
                                      site=self.site)
         # Solve wrong Nº sign with °C or °F
         # additional exception requested on fr-wiki for this stuff
-        pattern = re.compile(u'«.*?»', re.UNICODE)
+        pattern = re.compile('«.*?»')
         exceptions.append(pattern)
         text = textlib.replaceExcept(text, r'(\d)\s*(?:&nbsp;)?[º°]([CF])',
-                                     r'\1&nbsp;°\2', exceptions, site=self.site)
-        text = textlib.replaceExcept(text, u'º([CF])', u'°' + r'\1',
+                                     r'\1&nbsp;°\2', exceptions,
+                                     site=self.site)
+        text = textlib.replaceExcept(text, 'º([CF])', '°' + r'\1',
                                      exceptions,
                                      site=self.site)
         return text
@@ -861,20 +960,15 @@ class CosmeticChangesToolkit(object):
             'startspace',
             'inputbox',
         ]
-        # FIXME: use textlib.NON_LATIN_DIGITS
-        # valid digits
-        digits = {
-            'ckb': u'٠١٢٣٤٥٦٧٨٩',
-            'fa': u'۰۱۲۳۴۵۶۷۸۹',
-        }
-        faChrs = u'ءاآأإئؤبپتثجچحخدذرزژسشصضطظعغفقکگلمنوهیةيك' + digits['fa']
-        new = digits.pop(self.site.code)
-        # This only works if there are only two items in digits dict
-        old = digits[list(digits.keys())[0]]
+
+        digits = textlib.NON_LATIN_DIGITS
+        faChrs = 'ءاآأإئؤبپتثجچحخدذرزژسشصضطظعغفقکگلمنوهیةيك' + digits['fa']
+
         # not to let bot edits in latin content
-        exceptions.append(re.compile(u"[^%(fa)s] *?\"*? *?, *?[^%(fa)s]"
-                                     % {'fa': faChrs}))
-        text = textlib.replaceExcept(text, ',', '،', exceptions, site=self.site)
+        exceptions.append(re.compile('[^{fa}] *?"*? *?, *?[^{fa}]'
+                                     .format(fa=faChrs)))
+        text = textlib.replaceExcept(text, ',', '،', exceptions,
+                                     site=self.site)
         if self.site.code == 'ckb':
             text = textlib.replaceExcept(text,
                                          '\u0647([.\u060c_<\\]\\s])',
@@ -891,23 +985,6 @@ class CosmeticChangesToolkit(object):
 
         return text
 
-        # FIXME: split this function into two.
-        # replace persian/arabic digits
-        # deactivated due to bug 55185
-        for i in range(0, 10):
-            text = textlib.replaceExcept(text, old[i], new[i], exceptions)
-        # do not change digits in class, style and table params
-        pattern = re.compile(r'\w+=(".+?"|\d+)', re.UNICODE)
-        exceptions.append(pattern)
-        # do not change digits inside html-tags
-        pattern = re.compile(u'<[/]*?[^</]+?[/]*?>', re.UNICODE)
-        exceptions.append(pattern)
-        exceptions.append('table')  # exclude tables for now
-        # replace digits
-        for i in range(0, 10):
-            text = textlib.replaceExcept(text, str(i), new[i], exceptions)
-        return text
-
     def commonsfiledesc(self, text):
         """
         Clean up file descriptions on the Wikimedia Commons.
@@ -915,31 +992,35 @@ class CosmeticChangesToolkit(object):
         It is working according to [1] and works only on pages in the file
         namespace on the Wikimedia Commons.
 
-        [1]: https://commons.wikimedia.org/wiki/Commons:Tools/pywiki_file_description_cleanup
+        [1]:
+        https://commons.wikimedia.org/wiki/Commons:Tools/pywiki_file_description_cleanup
         """
         if self.site.sitename != 'commons:commons' or self.namespace == 6:
-            return
+            return text
+
         # section headers to {{int:}} versions
         exceptions = ['comment', 'includeonly', 'math', 'noinclude', 'nowiki',
                       'pre', 'source', 'ref', 'timeline']
         text = textlib.replaceExcept(text,
-                                     r"([\r\n]|^)\=\= *Summary *\=\=",
-                                     r"\1== {{int:filedesc}} ==",
+                                     r'([\r\n]|^)\=\= *Summary *\=\=',
+                                     r'\1== {{int:filedesc}} ==',
                                      exceptions, True)
         text = textlib.replaceExcept(
             text,
-            r"([\r\n])\=\= *\[\[Commons:Copyright tags\|Licensing\]\]: *\=\=",
-            r"\1== {{int:license-header}} ==", exceptions, True)
+            r'([\r\n])\=\= *\[\[Commons:Copyright tags\|Licensing\]\]: *\=\=',
+            r'\1== {{int:license-header}} ==', exceptions, True)
         text = textlib.replaceExcept(
             text,
-            r"([\r\n])\=\= *(Licensing|License information|{{int:license}}) *\=\=",
-            r"\1== {{int:license-header}} ==", exceptions, True)
+            r'([\r\n])'
+            r'\=\= *(Licensing|License information|{{int:license}}) *\=\=',
+            r'\1== {{int:license-header}} ==', exceptions, True)
 
         # frequent field values to {{int:}} versions
         text = textlib.replaceExcept(
             text,
             r'([\r\n]\|[Ss]ource *\= *)'
-            r'(?:[Oo]wn work by uploader|[Oo]wn work|[Ee]igene [Aa]rbeit) *([\r\n])',
+            r'(?:[Oo]wn work by uploader|[Oo]wn work|[Ee]igene [Aa]rbeit) *'
+            r'([\r\n])',
             r'\1{{own}}\2', exceptions, True)
         text = textlib.replaceExcept(
             text,
@@ -960,7 +1041,8 @@ class CosmeticChangesToolkit(object):
         # duplicated section headers
         text = textlib.replaceExcept(
             text,
-            r'([\r\n]|^)\=\= *{{int:filedesc}} *\=\=(?:[\r\n ]*)\=\= *{{int:filedesc}} *\=\=',
+            r'([\r\n]|^)\=\= *{{int:filedesc}} *\=\=(?:[\r\n ]*)\=\= *'
+            r'{{int:filedesc}} *\=\=',
             r'\1== {{int:filedesc}} ==', exceptions, True)
         text = textlib.replaceExcept(
             text,

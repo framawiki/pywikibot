@@ -1,27 +1,23 @@
 # -*- coding: utf-8 -*-
 """Logging functions."""
 #
-# (C) Pywikibot team, 2010-2016
+# (C) Pywikibot team, 2010-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import logging
 import os
 import sys
 
 # logging levels
-from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
+from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL, StreamHandler
+
 STDOUT = 16
 VERBOSE = 18
 INPUT = 25
 
-if sys.version_info[0] > 2:
-    unicode = str
-
 _init_routines = []
-_inited_routines = []
+_inited_routines = set()
 
 
 def add_init_routine(routine):
@@ -34,16 +30,16 @@ def _init():
     for init_routine in _init_routines:
         if init_routine not in _inited_routines:
             init_routine()
-        _inited_routines.append(init_routine)
+        _inited_routines.add(init_routine)
 
     # Clear the list of routines to be inited
-    _init_routines[:] = []
+    _init_routines[:] = []  # the global variable is used with slice operator
 
 
 # User output/logging functions
 
-# Six output functions are defined. Each requires a unicode or string
-# argument. All of these functions generate a message to the log file if
+# Six output functions are defined. Each requires a string argument
+# All of these functions generate a message to the log file if
 # logging is enabled ("-log" or "-debug" command line arguments).
 
 # The functions output(), stdout(), warning(), and error() all display a
@@ -61,7 +57,7 @@ def _init():
 # string indicating the debugging layer.
 
 
-def logoutput(text, decoder=None, newline=True, _level=INFO, _logger="",
+def logoutput(text, decoder=None, newline=True, _level=INFO, _logger='',
               **kwargs):
     """Format output and send to the logging module.
 
@@ -69,9 +65,12 @@ def logoutput(text, decoder=None, newline=True, _level=INFO, _logger="",
 
     """
     if _logger:
-        logger = logging.getLogger("pywiki." + _logger)
+        logger = logging.getLogger('pywiki.' + _logger)
     else:
-        logger = logging.getLogger("pywiki")
+        logger = logging.getLogger('pywiki')
+
+    if not logger.handlers:  # lastResort for Python 2 (T188417)
+        logger.handlers.append(StreamHandler())
 
     # invoke any init routines
     if _init_routines:
@@ -86,21 +85,20 @@ def logoutput(text, decoder=None, newline=True, _level=INFO, _logger="",
     context = {'caller_name': frame.f_code.co_name,
                'caller_file': module,
                'caller_line': frame.f_lineno,
-               'newline': ("\n" if newline else "")}
+               'newline': ('\n' if newline else '')}
 
     if decoder:
         text = text.decode(decoder)
-    elif not isinstance(text, unicode):
-        if not isinstance(text, str):
-            # looks like text is a non-text object.
-            # Maybe it has a __unicode__ builtin ?
-            # (allows to print Page, Site...)
-            text = unicode(text)
-        else:
-            try:
-                text = text.decode('utf-8')
-            except UnicodeDecodeError:
-                text = text.decode('iso8859-1')
+    elif isinstance(text, bytes):
+        try:
+            text = text.decode('utf-8')
+        except UnicodeDecodeError:
+            text = text.decode('iso8859-1')
+    else:
+        # looks like text is a non-text object.
+        # Maybe it has a __str__ builtin ?
+        # (allows to print Page, Site...)
+        text = str(text)
 
     logger.log(_level, text, extra=context, **kwargs)
 
@@ -131,9 +129,9 @@ def output(text, decoder=None, newline=True, toStdout=False, **kwargs):
     log message to include an exception traceback.
     """
     if toStdout:  # maintained for backwards-compatibity only
-        from pywikibot.tools import issue_deprecation_warning  # noqa
+        from pywikibot.tools import issue_deprecation_warning
         issue_deprecation_warning('"toStdout" parameter',
-                                  'pywikibot.stdout()', 2)
+                                  'pywikibot.stdout()', since='20160228')
         logoutput(text, decoder, newline, STDOUT, **kwargs)
     else:
         logoutput(text, decoder, newline, INFO, **kwargs)
@@ -145,7 +143,18 @@ def stdout(text, decoder=None, newline=True, **kwargs):
 
 
 def warning(text, decoder=None, newline=True, **kwargs):
-    """Output a warning message to the user via the userinterface."""
+    """Output a warning message to the user via the userinterface.
+
+    @param text: the message the user wants to display.
+    @type text: str
+    @param decoder: If None, text should be a unicode string. Otherwise it
+        should be encoded in the given encoding.
+    @type decoder: str
+    @param newline: If True, a line feed will be added after printing the text.
+    @type newline: bool
+    @param kwargs: The keyword arguments can be found in the python doc:
+        https://docs.python.org/3/howto/logging-cookbook.html.
+    """
     logoutput(text, decoder, newline, WARNING, **kwargs)
 
 
@@ -160,7 +169,7 @@ def log(text, decoder=None, newline=True, **kwargs):
 
 
 def critical(text, decoder=None, newline=True, **kwargs):
-    """Output a critical record to the log file."""
+    """Output a critical record to the user via the userinterface."""
     logoutput(text, decoder, newline, CRITICAL, **kwargs)
 
 
@@ -195,8 +204,8 @@ def exception(msg=None, decoder=None, newline=True, tb=False, **kwargs):
         exc_info = 1
     else:
         exc_info = sys.exc_info()
-        msg = u'%s: %s' % (repr(exc_info[1]).split('(')[0],
-                           unicode(exc_info[1]).strip())
+        msg = '{}: {}'.format(repr(exc_info[1]).split('(')[0],
+                              str(exc_info[1]).strip())
     if tb:
         kwargs['exc_info'] = exc_info
     logoutput(msg, decoder, newline, ERROR, **kwargs)

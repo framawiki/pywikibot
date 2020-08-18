@@ -31,10 +31,12 @@ Furthermore, the following command line parameters are supported:
 -orphansonly:     Specified namespaces. Separate multiple namespace
                   numbers or names with commas.
                   Examples:
+
                   -orphansonly:0,2,4
                   -orphansonly:Help,MediaWiki
 
                   Note that Main ns can be indicated either with a 0 or a ',':
+
                   -orphansonly:0,1
                   -orphansonly:,Talk
 
@@ -42,21 +44,21 @@ Usage:
 
     python pwb.py delete [-category categoryName]
 
-Examples:
+Examples
+--------
 
-Delete everything in the category "To delete" without prompting.
+Delete everything in the category "To delete" without prompting:
 
     python pwb.py delete -cat:"To delete" -always
 """
 #
-# (C) Pywikibot team, 2017
+# (C) Pywikibot team, 2013-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import collections
 
+from typing import Set
 from warnings import warn
 
 import pywikibot
@@ -65,13 +67,20 @@ from pywikibot import exceptions
 from pywikibot import i18n, pagegenerators
 from pywikibot.bot import MultipleSitesBot, CurrentPageBot
 from pywikibot.page import Page
-from pywikibot.tools import islice_with_ellipsis
+from pywikibot.site import Namespace
+from pywikibot.tools import islice_with_ellipsis, PYTHON_VERSION
+
+if PYTHON_VERSION < (3, 5, 2):
+    from typing import Dict as DefaultDict
+else:
+    from typing import DefaultDict
+
 
 # This is required for the text that is shown when you run this script
 # with the parameter -help.
-docuReplacements = {
-    '&params;': pagegenerators.parameterHelp,
-}
+docuReplacements = {'&params;': pagegenerators.parameterHelp}  # noqa: N816
+
+RefTable = DefaultDict[Namespace, Page]
 
 
 class PageWithRefs(Page):
@@ -82,13 +91,13 @@ class PageWithRefs(Page):
     Supports the same interface as Page, with some added methods.
     """
 
-    def __init__(self, source, title='', ns=0):
-        """Constructor."""
-        super(PageWithRefs, self).__init__(source, title, ns)
-        _cache_attrs = list(super(PageWithRefs, self)._cache_attrs)
+    def __init__(self, source, title='', ns=0) -> None:
+        """Initializer."""
+        super().__init__(source, title, ns)
+        _cache_attrs = list(super()._cache_attrs)
         _cache_attrs = tuple(_cache_attrs + ['_ref_table'])
 
-    def get_ref_table(self, *args, **kwargs):
+    def get_ref_table(self, *args, **kwargs) -> RefTable:
         """Build mapping table with pages which links the current page."""
         ref_table = collections.defaultdict(list)
         for page in self.getReferences(*args, **kwargs):
@@ -96,7 +105,7 @@ class PageWithRefs(Page):
         return ref_table
 
     @property
-    def ref_table(self):
+    def ref_table(self) -> RefTable:
         """
         Build link reference table lazily.
 
@@ -108,7 +117,7 @@ class PageWithRefs(Page):
             self._ref_table = self.get_ref_table()
         return self._ref_table
 
-    def namespaces_with_ref_to_page(self, namespaces=None):
+    def namespaces_with_ref_to_page(self, namespaces=None) -> Set[Namespace]:
         """
         Check if current page has links from pages in namepaces.
 
@@ -117,7 +126,6 @@ class PageWithRefs(Page):
 
         @param namespaces: Namespace to check
         @type namespaces: iterable of Namespace objects
-        @rtype set: namespaces where a ref to page is present
         """
         if namespaces is None:
             namespaces = self.site.namespaces()
@@ -129,40 +137,44 @@ class DeletionRobot(MultipleSitesBot, CurrentPageBot):
 
     """This robot allows deletion of pages en masse."""
 
-    def __init__(self, generator, summary, **kwargs):
+    def __init__(self, generator, summary, **kwargs) -> None:
         """
-        Constructor.
+        Initializer.
 
         @param generator: the pages to work on
         @type generator: iterable
         @param summary: the reason for the (un)deletion
-        @type summary: unicode
+        @type summary: str
         """
         self.availableOptions.update({
             'undelete': False,
             'isorphan': 0,
             'orphansonly': [],
         })
-        super(DeletionRobot, self).__init__(generator=generator, **kwargs)
+        super().__init__(generator=generator, **kwargs)
 
         self.summary = summary
         # Upcast pages to PageWithRefs()
         self.generator = (PageWithRefs(p) for p in self.generator)
 
-    def display_references(self):
+    def display_references(self) -> None:
         """
-        Display pages which links the current page, sorted per namespace.
+        Display pages that link to the current page, sorted per namespace.
 
         Number of pages to display per namespace is provided by:
         - self.getOption('isorphan')
         """
         refs = self.current_page.ref_table
-        if refs:
-            total = sum(len(v) for v in refs.values())
-            pywikibot.warning('There are %d pages who link to %s.'
-                              % (total, self.current_page))
-        else:
+        if not refs:
             return
+
+        total = sum(len(v) for v in refs.values())
+        if total > 1:
+            pywikibot.warning('There are {} pages that link to {}.'
+                              .format(total, self.current_page))
+        else:
+            pywikibot.warning('There is a page that links to {}.'
+                              .format(self.current_page))
 
         show_n_pages = self.getOption('isorphan')
         width = len(max((ns.canonical_prefix() for ns in refs), key=len))
@@ -178,59 +190,61 @@ class DeletionRobot(MultipleSitesBot, CurrentPageBot):
                 for page in islice_with_ellipsis(refs[ns], show_n_pages):
                     pywikibot.output('      {0!s}'.format(page.title()))
 
-    def treat_page(self):
+    def skip_page(self, page) -> bool:
+        """Skip the page under some conditions."""
+        if self.getOption('undelete') and page.exists():
+            pywikibot.output('Skipping: {0} already exists.'.format(page))
+            return True
+        if not self.getOption('undelete') and not page.exists():
+            pywikibot.output('Skipping: {0} does not exist.'.format(page))
+            return True
+        return super().skip_page(page)
+
+    def treat_page(self) -> None:
         """Process one page from the generator."""
         if self.getOption('undelete'):
-            if self.current_page.exists():
-                pywikibot.output(u'Skipping: {0} already exists.'.format(
-                    self.current_page))
-            else:
-                self.current_page.undelete(self.summary)
+            self.current_page.undelete(self.summary)
         else:
-            if self.current_page.exists():
+            if (self.getOption('isorphan') is not False
+                    and not self.getOption('always')):
+                self.display_references()
 
-                if (self.getOption('isorphan') is not False and
-                        not self.getOption('always')):
-                    self.display_references()
+            if self.getOption('orphansonly'):
+                namespaces = self.getOption('orphansonly')
+                ns_with_ref = self.current_page.namespaces_with_ref_to_page(
+                    namespaces)
+                ns_with_ref = sorted(ns_with_ref)
+                if ns_with_ref:
+                    ns_names = ', '.join(str(ns.id) for ns in ns_with_ref)
+                    pywikibot.output(
+                        'Skipping: {0} is not orphan in ns: {1}.'.format(
+                            self.current_page, ns_names))
+                    return  # Not an orphan, do not delete.
 
-                if self.getOption('orphansonly'):
-                    namespaces = self.getOption('orphansonly')
-                    ns_with_ref = self.current_page.namespaces_with_ref_to_page(
-                        namespaces)
-                    ns_with_ref = sorted(list(ns_with_ref))
-                    if ns_with_ref:
-                        ns_names = ', '.join(str(ns.id) for ns in ns_with_ref)
-                        pywikibot.output(
-                            'Skipping: {0} is not orphan in ns: {1}.'.format(
-                                self.current_page, ns_names))
-                        return  # Not an orphan, do not delete.
-
-                self.current_page.delete(self.summary,
-                                         not self.getOption('always'),
-                                         self.getOption('always'),
-                                         quit=True)
-            else:
-                pywikibot.output(u'Skipping: {0} does not exist.'.format(
-                    self.current_page))
+            if self.current_page.site.user() is None:
+                self.current_page.site.login()
+            self.current_page.delete(self.summary,
+                                     not self.getOption('always'),
+                                     self.getOption('always'),
+                                     quit=True)
 
 
-def main(*args):
+def main(*args) -> None:
     """
     Process command line arguments and invoke bot.
 
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
-    pageName = ''
+    page_name = ''
     summary = None
-    generator = None
     options = {}
 
     # read command line parameters
     local_args = pywikibot.handle_args(args)
-    genFactory = pagegenerators.GeneratorFactory()
+    gen_factory = pagegenerators.GeneratorFactory()
     mysite = pywikibot.Site()
 
     for arg in local_args:
@@ -239,7 +253,7 @@ def main(*args):
             options['always'] = True
         elif arg.startswith('-summary'):
             if len(arg) == len('-summary'):
-                summary = pywikibot.input(u'Enter a reason for the deletion:')
+                summary = pywikibot.input('Enter a reason for the deletion:')
             else:
                 summary = arg[len('-summary:'):]
         elif arg.startswith('-images'):
@@ -254,50 +268,48 @@ def main(*args):
                 options['isorphan'] = False
         elif arg.startswith('-orphansonly'):
             if arg[13:]:
-                namespaces = mysite.namespaces.resolve(arg[13:].split(","))
+                namespaces = mysite.namespaces.resolve(arg[13:].split(','))
             else:
                 namespaces = mysite.namespaces
             options['orphansonly'] = namespaces
         else:
-            genFactory.handleArg(arg)
+            gen_factory.handleArg(arg)
             found = arg.find(':') + 1
             if found:
-                pageName = arg[found:]
+                page_name = arg[found:]
 
         if not summary:
             un = 'un' if 'undelete' in options else ''
-            if pageName:
-                if arg.startswith('-cat') or arg.startswith('-subcats'):
+            if page_name:
+                if arg.startswith(('-cat', '-subcats')):
                     summary = i18n.twtranslate(mysite, 'delete-from-category',
-                                               {'page': pageName})
+                                               {'page': page_name})
                 elif arg.startswith('-links'):
                     summary = i18n.twtranslate(mysite,
                                                un + 'delete-linked-pages',
-                                               {'page': pageName})
+                                               {'page': page_name})
                 elif arg.startswith('-ref'):
-                    summary = i18n.twtranslate(mysite, 'delete-referring-pages',
-                                               {'page': pageName})
+                    summary = i18n.twtranslate(
+                        mysite, 'delete-referring-pages', {'page': page_name})
                 elif arg.startswith('-imageused'):
                     summary = i18n.twtranslate(mysite, un + 'delete-images',
-                                               {'page': pageName})
+                                               {'page': page_name})
             elif arg.startswith('-file'):
                 summary = i18n.twtranslate(mysite, un + 'delete-from-file')
 
-    generator = genFactory.getCombinedGenerator()
+    generator = gen_factory.getCombinedGenerator()
     # We are just deleting pages, so we have no need of using a preloading
     # page generator to actually get the text of those pages.
     if generator:
         if summary is None:
-            summary = pywikibot.input(u'Enter a reason for the %sdeletion:'
-                                      % ['', 'un'][options.get('undelete',
-                                                               False)])
+            summary = pywikibot.input('Enter a reason for the {}deletion:'
+                                      .format(['', 'un'][options
+                                              .get('undelete', False)]))
         bot = DeletionRobot(generator, summary, **options)
         bot.run()
-        return True
     else:
         pywikibot.bot.suggest_help(missing_generator=True)
-        return False
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

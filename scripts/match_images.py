@@ -23,8 +23,7 @@ This is just a first version so that other people can play around with it.
 Expect the code to change a lot!
 """
 #
-# (c) Multichill, 2009
-# (c) Pywikibot team, 2009-2017
+# (c) Pywikibot team, 2009-2019
 #
 # Distributed under the terms of the MIT license.
 #
@@ -32,11 +31,15 @@ from __future__ import absolute_import, division, unicode_literals
 
 import io
 
-from PIL import Image
-
 import pywikibot
 
+from pywikibot.bot import suggest_help
 from pywikibot.comms import http
+
+try:
+    from PIL import Image
+except ImportError as e:
+    Image = e
 
 
 def match_image_pages(imagePageA, imagePageB):
@@ -50,7 +53,6 @@ def match_image_pages(imagePageA, imagePageB):
     imageB = get_image_from_image_page(imagePageB)
 
     (imA_width, imA_height) = imageA.size
-    (imB_width, imB_height) = imageB.size
 
     imageB = imageB.resize((imA_width, imA_height))
 
@@ -83,8 +85,8 @@ def match_image_pages(imagePageA, imagePageB):
     bottomleftScore = match_images(imageA_bottomleft, imageB_bottomleft)
     bottomrightScore = match_images(imageA_bottomright, imageB_bottomright)
     centerScore = match_images(imageA_center, imageB_center)
-    averageScore = (wholeScore + topleftScore + toprightScore +
-                    bottomleftScore + bottomrightScore + centerScore) / 6
+    averageScore = (wholeScore + topleftScore + toprightScore
+                    + bottomleftScore + bottomrightScore + centerScore) / 6
 
     pywikibot.output('Whole image           {0:>7.2%}\n'
                      'Top left of image     {1:>7.2%}\n'
@@ -109,7 +111,6 @@ def match_image_pages(imagePageA, imagePageB):
 
 def get_image_from_image_page(imagePage):
     """Get the image object to work based on an imagePage object."""
-    imageBuffer = None
     imageURL = imagePage.fileUrl()
     imageURLopener = http.fetch(imageURL)
     imageBuffer = io.BytesIO(imageURLopener.raw[:])
@@ -128,9 +129,9 @@ def match_images(imageA, imageB):
     if len(histogramA) != len(histogramB):
         return 0
 
-    for i in range(0, len(histogramA)):
-        totalMatch = totalMatch + min(histogramA[i], histogramB[i])
-        totalPixels = totalPixels + max(histogramA[i], histogramB[i])
+    for i, hist_a in enumerate(histogramA):
+        totalMatch = totalMatch + min(hist_a, histogramB[i])
+        totalPixels = totalPixels + max(hist_a, histogramB[i])
 
     if totalPixels == 0:
         return 0
@@ -139,12 +140,10 @@ def match_images(imageA, imageB):
 
 
 def main(*args):
-    """Extracting file page information of images to work on and initiate matching."""
+    """Extracting file page information and initiate matching."""
     images = []
-    other_family = u''
-    other_lang = u''
-    imagePageA = None
-    imagePageB = None
+    other_family = ''
+    other_lang = ''
 
     # Read commandline parameters.
     local_args = pywikibot.handle_args(args)
@@ -152,22 +151,28 @@ def main(*args):
     for arg in local_args:
         if arg.startswith('-otherfamily:'):
             if len(arg) == len('-otherfamily:'):
-                other_family = pywikibot.input(u'What family do you want to use?')
+                other_family = pywikibot.input(
+                    'What family do you want to use?')
             else:
                 other_family = arg[len('-otherfamily:'):]
         elif arg.startswith('-otherlang:'):
             if len(arg) == len('-otherlang:'):
-                other_lang = pywikibot.input(u'What language do you want to use?')
+                other_lang = pywikibot.input(
+                    'What language do you want to use?')
             else:
                 other_lang = arg[len('otherlang:'):]
         else:
             images.append(arg)
 
-    if len(images) != 2:
-        pywikibot.bot.suggest_help(
-            additional_text='Unable to execute script because it '
-                            'requires two images to work on.')
-        return False
+    additional_text = ('Unable to execute script because it '
+                       'requires two images to work on.'
+                       if len(images) != 2 else None)
+    missing_dependencies = ('Pillow',) if isinstance(
+        Image, ImportError) else None
+
+    if suggest_help(missing_dependencies=missing_dependencies,
+                    additional_text=additional_text):
+        return
 
     imagePageA = pywikibot.page.FilePage(pywikibot.Site(),
                                          images[0])
@@ -187,5 +192,5 @@ def main(*args):
     match_image_pages(imagePageA, imagePageB)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

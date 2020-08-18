@@ -2,74 +2,26 @@
 # -*- coding: utf-8 -*-
 """Test tools package alone which don't fit into other tests."""
 #
-# (C) Pywikibot team, 2016-2017
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
-from __future__ import absolute_import, unicode_literals
-
-import collections
 import decimal
-import inspect
 import os.path
 import subprocess
 import tempfile
-import warnings
+
+from collections.abc import Mapping
+from collections import OrderedDict
+from contextlib import suppress
+from importlib import import_module
 
 from pywikibot import tools
 from pywikibot.tools import classproperty
 
 from tests import join_xml_data_path, mock
 from tests.aspects import (
-    unittest, require_modules, DeprecationTestCase, TestCase, MetaTestCaseClass
+    unittest, require_modules, DeprecationTestCase, TestCase
 )
-from tests.utils import add_metaclass
-
-
-class ContextManagerWrapperTestCase(TestCase):
-
-    """Test that ContextManagerWrapper is working correctly."""
-
-    class DummyClass(object):
-
-        """A dummy class which has some values and a close method."""
-
-        class_var = 42
-
-        def __init__(self):
-            """Create instance with dummy values."""
-            self.instance_var = 1337
-            self.closed = False
-
-        def close(self):
-            """Just store that it has been closed."""
-            self.closed = True
-
-    net = False
-
-    def test_wrapper(self):
-        """Create a test instance and verify the wrapper redirects."""
-        obj = self.DummyClass()
-        wrapped = tools.ContextManagerWrapper(obj)
-        self.assertIs(wrapped.class_var, obj.class_var)
-        self.assertIs(wrapped.instance_var, obj.instance_var)
-        self.assertIs(wrapped._wrapped, obj)
-        self.assertFalse(obj.closed)
-        with wrapped as unwrapped:
-            self.assertFalse(obj.closed)
-            self.assertIs(unwrapped, obj)
-            unwrapped.class_var = 47
-        self.assertTrue(obj.closed)
-        self.assertEqual(wrapped.class_var, 47)
-
-    def test_exec_wrapper(self):
-        """Check that the wrapper permits exceptions."""
-        wrapper = tools.ContextManagerWrapper(self.DummyClass())
-        self.assertFalse(wrapper.closed)
-        with self.assertRaisesRegex(ZeroDivisionError,
-                                    '(integer division or modulo by zero|division by zero)'):
-            with wrapper:
-                1 / 0
-        self.assertTrue(wrapper.closed)
 
 
 class OpenArchiveTestCase(TestCase):
@@ -88,7 +40,7 @@ class OpenArchiveTestCase(TestCase):
     @classmethod
     def setUpClass(cls):
         """Define base_file and original_content."""
-        super(OpenArchiveTestCase, cls).setUpClass()
+        super().setUpClass()
         cls.base_file = join_xml_data_path('article-pyrus.xml')
         with open(cls.base_file, 'rb') as f:
             cls.original_content = f.read().replace(b'\r\n', b'\n')
@@ -100,20 +52,23 @@ class OpenArchiveTestCase(TestCase):
 
     def test_open_archive_normal(self):
         """Test open_archive with no compression in the standard library."""
-        self.assertEqual(self._get_content(self.base_file), self.original_content)
+        self.assertEqual(
+            self._get_content(self.base_file), self.original_content)
 
     def test_open_archive_bz2(self):
         """Test open_archive with bz2 compressor in the standard library."""
-        self.assertEqual(self._get_content(self.base_file + '.bz2'), self.original_content)
-        self.assertEqual(self._get_content(self.base_file + '.bz2', use_extension=False),
-                         self.original_content)
+        self.assertEqual(
+            self._get_content(self.base_file + '.bz2'), self.original_content)
+        self.assertEqual(
+            self._get_content(self.base_file + '.bz2', use_extension=False),
+            self.original_content)
 
     @require_modules('bz2file')
     def test_open_archive_with_bz2file(self):
         """Test open_archive when bz2file library."""
         old_bz2 = tools.bz2
         try:
-            tools.bz2 = __import__('bz2file')
+            tools.bz2 = import_module('bz2file')
             self.assertEqual(self._get_content(self.base_file + '.bz2'),
                              self.original_content)
             self.assertEqual(self._get_content(self.base_file + '.bz2',
@@ -125,12 +80,12 @@ class OpenArchiveTestCase(TestCase):
     def test_open_archive_without_bz2(self):
         """Test open_archive when bz2 and bz2file are not available."""
         old_bz2 = tools.bz2
-        BZ2_IMPORT_ERROR = ('This is a fake exception message that is '
-                            'used when bz2 and bz2file is not importable')
+        bz2_import_error = ('This is a fake exception message that is '
+                            'used when bz2 and bz2file are not importable')
         try:
-            tools.bz2 = ImportError(BZ2_IMPORT_ERROR)
+            tools.bz2 = ImportError(bz2_import_error)
             self.assertRaisesRegex(ImportError,
-                                   BZ2_IMPORT_ERROR,
+                                   bz2_import_error,
                                    self._get_content,
                                    self.base_file + '.bz2')
         finally:
@@ -138,21 +93,54 @@ class OpenArchiveTestCase(TestCase):
 
     def test_open_archive_gz(self):
         """Test open_archive with gz compressor in the standard library."""
-        self.assertEqual(self._get_content(self.base_file + '.gz'), self.original_content)
+        self.assertEqual(
+            self._get_content(self.base_file + '.gz'), self.original_content)
 
     def test_open_archive_7z(self):
         """Test open_archive with 7za if installed."""
-        FAILED_TO_OPEN_7ZA = 'Unexpected STDERR output from 7za '
         try:
             subprocess.Popen(['7za'], stdout=subprocess.PIPE).stdout.close()
         except OSError:
-            raise unittest.SkipTest('7za not installed')
-        self.assertEqual(self._get_content(self.base_file + '.7z'), self.original_content)
+            self.skipTest('7za not installed')
+        self.assertEqual(
+            self._get_content(self.base_file + '.7z'), self.original_content)
         self.assertRaisesRegex(OSError,
-                               FAILED_TO_OPEN_7ZA,
+                               'Unexpected STDERR output from 7za ',
                                self._get_content,
                                self.base_file + '_invalid.7z',
                                use_extension=True)
+
+    def test_open_archive_lzma(self):
+        """Test open_archive with lzma compressor in the standard library."""
+        if isinstance(tools.lzma, ImportError):
+            self.skipTest('lzma not importable')
+        self.assertEqual(
+            self._get_content(self.base_file + '.lzma'), self.original_content)
+        # Legacy LZMA container formet has no magic, skipping
+        # use_extension=False test here
+        self.assertEqual(
+            self._get_content(self.base_file + '.xz'), self.original_content)
+        self.assertEqual(
+            self._get_content(self.base_file + '.xz', use_extension=False),
+            self.original_content)
+
+    def test_open_archive_without_lzma(self):
+        """Test open_archive when lzma is not available."""
+        old_lzma = tools.lzma
+        lzma_import_error = ('This is a fake exception message that is '
+                             'used when lzma is not importable')
+        try:
+            tools.lzma = ImportError(lzma_import_error)
+            self.assertRaisesRegex(ImportError,
+                                   lzma_import_error,
+                                   self._get_content,
+                                   self.base_file + '.lzma')
+            self.assertRaisesRegex(ImportError,
+                                   lzma_import_error,
+                                   self._get_content,
+                                   self.base_file + '.xz')
+        finally:
+            tools.lzma = old_lzma
 
 
 class OpenCompressedTestCase(OpenArchiveTestCase, DeprecationTestCase):
@@ -163,9 +151,10 @@ class OpenCompressedTestCase(OpenArchiveTestCase, DeprecationTestCase):
 
     def _get_content(self, *args, **kwargs):
         """Use open_compressed and return content using a with-statement."""
-        # open_archive default is True, so if it's False it's not the default
-        # so use the non-default of open_compressed (which is True)
-        if kwargs.get('use_extension') is False:
+        # open_archive default is True, but open_compressed default is False.
+        # The test cases assumes a default of True and we need to make
+        # open_compressed acknowledge that.
+        if 'use_extension' not in kwargs:
             kwargs['use_extension'] = True
 
         with tools.open_compressed(*args, **kwargs) as f:
@@ -183,7 +172,7 @@ class OpenArchiveWriteTestCase(TestCase):
     @classmethod
     def setUpClass(cls):
         """Define base_file and original_content."""
-        super(OpenArchiveWriteTestCase, cls).setUpClass()
+        super().setUpClass()
         cls.base_file = join_xml_data_path('article-pyrus.xml')
         with open(cls.base_file, 'rb') as f:
             cls.original_content = f.read().replace(b'\r\n', b'\n')
@@ -203,26 +192,23 @@ class OpenArchiveWriteTestCase(TestCase):
 
     def test_invalid_modes(self):
         """Test various invalid mode configurations."""
-        INVALID_MODE_RA = 'Invalid mode: "ra"'
-        INVALID_MODE_RT = 'Invalid mode: "rt"'
-        INVALID_MODE_BR = 'Invalid mode: "br"'
-        MN_DETECTION_ONLY = 'Magic number detection only when reading'
         self.assertRaisesRegex(ValueError,
-                               INVALID_MODE_RA,
+                               'Invalid mode: "ra"',
                                tools.open_archive,
                                '/dev/null', 'ra')  # two modes besides
         self.assertRaisesRegex(ValueError,
-                               INVALID_MODE_RT,
+                               'Invalid mode: "rt"',
                                tools.open_archive,
                                '/dev/null', 'rt')  # text mode
         self.assertRaisesRegex(ValueError,
-                               INVALID_MODE_BR,
+                               'Invalid mode: "br"',
                                tools.open_archive,
                                '/dev/null', 'br')  # binary at front
         self.assertRaisesRegex(ValueError,
-                               MN_DETECTION_ONLY,
+                               'Magic number detection only when reading',
                                tools.open_archive,
-                               '/dev/null', 'wb', False)  # writing without extension
+                               # writing without extension
+                               '/dev/null', 'wb', False)
 
     def test_binary_mode(self):
         """Test that it uses binary mode."""
@@ -243,12 +229,28 @@ class OpenArchiveWriteTestCase(TestCase):
 
     def test_write_archive_7z(self):
         """Test writing an archive as a 7z archive."""
-        FAILED_TO_WRITE_7Z = 'It is not possible to write a 7z file.'
         self.assertRaisesRegex(NotImplementedError,
-                               FAILED_TO_WRITE_7Z,
+                               'It is not possible to write a 7z file.',
                                tools.open_archive,
                                '/dev/null.7z',
                                mode='wb')
+
+    def test_write_archive_lzma(self):
+        """Test writing a lzma archive."""
+        if isinstance(tools.lzma, ImportError):
+            self.skipTest('lzma not importable')
+
+        content = self._write_content('.lzma')
+        with open(self.base_file + '.lzma', 'rb') as f:
+            self.assertEqual(content, f.read())
+
+    def test_write_archive_xz(self):
+        """Test writing a xz archive."""
+        if isinstance(tools.lzma, ImportError):
+            self.skipTest('lzma not importable')
+
+        content = self._write_content('.xz')
+        self.assertEqual(content[:6], b'\xFD7zXZ\x00')
 
 
 class MergeUniqueDicts(TestCase):
@@ -281,7 +283,8 @@ class MergeUniqueDicts(TestCase):
     def test_conflict(self):
         """Test that it detects conflicts."""
         self.assertRaisesRegex(
-            ValueError, '42', tools.merge_unique_dicts, self.dct1, **{'42': 'bad'})
+            ValueError, '42', tools.merge_unique_dicts, self.dct1,
+            **{'42': 'bad'})
         self.assertRaisesRegex(
             ValueError, '42', tools.merge_unique_dicts, self.dct1, self.dct1)
         self.assertRaisesRegex(
@@ -301,7 +304,7 @@ class TestIsSliceWithEllipsis(TestCase):
         """Test marker is shown without kwargs."""
         stop = 2
         it = list(tools.islice_with_ellipsis(self.it, stop))
-        self.assertEqual(len(it), stop + 1)  # +1 to consider marker.
+        self.assertLength(it, stop + 1)  # +1 to consider marker.
         self.assertEqual(it[:-1], self.it[:stop])
         self.assertEqual(it[-1], '…')
 
@@ -309,7 +312,7 @@ class TestIsSliceWithEllipsis(TestCase):
         """Test correct marker is shown with kwargs.."""
         stop = 2
         it = list(tools.islice_with_ellipsis(self.it, stop, marker='new'))
-        self.assertEqual(len(it), stop + 1)  # +1 to consider marker.
+        self.assertLength(it, stop + 1)  # +1 to consider marker.
         self.assertEqual(it[:-1], self.it[:stop])
         self.assertNotEqual(it[-1], '…')
         self.assertEqual(it[-1], 'new')
@@ -319,7 +322,7 @@ class TestIsSliceWithEllipsis(TestCase):
         start = 1
         stop = 3
         it = list(tools.islice_with_ellipsis(self.it, start, stop))
-        self.assertEqual(len(it), stop - start + 1)  # +1 to consider marker.
+        self.assertLength(it, stop - start + 1)  # +1 to consider marker.
         self.assertEqual(it[:-1], self.it[start:stop])
         self.assertEqual(it[-1], '…')
 
@@ -327,8 +330,9 @@ class TestIsSliceWithEllipsis(TestCase):
         """Test marker is shown with start and stop with kwargs."""
         start = 1
         stop = 3
-        it = list(tools.islice_with_ellipsis(self.it, start, stop, marker='new'))
-        self.assertEqual(len(it), stop - start + 1)  # +1 to consider marker.
+        it = list(tools.islice_with_ellipsis(
+            self.it, start, stop, marker='new'))
+        self.assertLength(it, stop - start + 1)  # +1 to consider marker.
         self.assertEqual(it[:-1], self.it[start:stop])
         self.assertNotEqual(it[-1], '…')
         self.assertEqual(it[-1], 'new')
@@ -337,14 +341,14 @@ class TestIsSliceWithEllipsis(TestCase):
         """Test marker is shown with stop for non empty iterable."""
         stop = 0
         it = list(tools.islice_with_ellipsis(self.it, stop))
-        self.assertEqual(len(it), stop + 1)  # +1 to consider marker.
+        self.assertLength(it, stop + 1)  # +1 to consider marker.
         self.assertEqual(it[-1], '…')
 
     def test_do_not_show_marker_with_stop_zero(self):
         """Test marker is shown with stop for empty iterable."""
         stop = 0
         it = list(tools.islice_with_ellipsis(self.it_null, stop))
-        self.assertEqual(len(it), stop)
+        self.assertLength(it, stop)
 
     def test_do_not_show_marker(self):
         """Test marker is not shown when no marker is specified."""
@@ -358,15 +362,14 @@ class TestIsSliceWithEllipsis(TestCase):
         """Test marker is not shown when all elements are retrieved."""
         stop = None
         it = list(tools.islice_with_ellipsis(self.it, stop))
-        self.assertEqual(len(it), len(self.it))
+        self.assertLength(it, len(self.it))
         self.assertEqual(it, self.it)
         self.assertNotEqual(it[-1], '…')
 
     def test_accept_only_keyword_marker(self):
         """Test that the only kwargs accepted is 'marker'."""
-        GENERATOR_NOT_CALLABLE = "'generator' object is not callable"
         self.assertRaisesRegex(TypeError,
-                               GENERATOR_NOT_CALLABLE,
+                               "'generator' object is not callable",
                                tools.islice_with_ellipsis(self.it, 1, t=''))
 
 
@@ -385,8 +388,8 @@ class SkipList(set):
         """Override to not process some items."""
         if item in self.skip_list:
             return True
-        else:
-            return super(SkipList, self).__contains__(item)
+
+        return super().__contains__(item)
 
 
 class ProcessAgainList(set):
@@ -399,8 +402,8 @@ class ProcessAgainList(set):
         """Override to not add some items."""
         if item in self.process_again_list:
             return
-        else:
-            return super(ProcessAgainList, self).add(item)
+
+        return super().add(item)
 
 
 class ContainsStopList(set):
@@ -413,8 +416,8 @@ class ContainsStopList(set):
         """Override to stop on encountering items."""
         if item in self.stop_list:
             raise StopIteration
-        else:
-            return super(ContainsStopList, self).__contains__(item)
+
+        return super().__contains__(item)
 
 
 class AddStopList(set):
@@ -427,8 +430,8 @@ class AddStopList(set):
         """Override to not continue on encountering items."""
         if item in self.stop_list:
             raise StopIteration
-        else:
-            super(AddStopList, self).add(item)
+
+        super().add(item)
 
 
 class TestFilterUnique(TestCase):
@@ -446,29 +449,29 @@ class TestFilterUnique(TestCase):
         if not key:
             key = passthrough
 
-        self.assertEqual(len(deduped), 0)
+        self.assertIsEmpty(deduped)
 
         self.assertEqual(next(deduper), 1)
         self.assertEqual(next(deduper), 3)
 
         if key in (hash, passthrough):
-            if isinstance(deduped, tools.OrderedDict):
+            if isinstance(deduped, OrderedDict):
                 self.assertEqual(list(deduped.keys()), [1, 3])
-            elif isinstance(deduped, collections.Mapping):
+            elif isinstance(deduped, Mapping):
                 self.assertCountEqual(list(deduped.keys()), [1, 3])
             else:
-                self.assertEqual(deduped, set([1, 3]))
+                self.assertEqual(deduped, {1, 3})
 
         self.assertEqual(next(deduper), 2)
         self.assertEqual(next(deduper), 4)
 
         if key in (hash, passthrough):
-            if isinstance(deduped, tools.OrderedDict):
+            if isinstance(deduped, OrderedDict):
                 self.assertEqual(list(deduped.keys()), [1, 3, 2, 4])
-            elif isinstance(deduped, collections.Mapping):
+            elif isinstance(deduped, Mapping):
                 self.assertCountEqual(list(deduped.keys()), [1, 2, 3, 4])
             else:
-                self.assertEqual(deduped, set([1, 2, 3, 4]))
+                self.assertEqual(deduped, {1, 2, 3, 4})
 
         self.assertRaises(StopIteration, next, deduper)
 
@@ -477,25 +480,25 @@ class TestFilterUnique(TestCase):
         if not key:
             key = passthrough
 
-        self.assertEqual(len(deduped), 0)
+        self.assertIsEmpty(deduped)
 
         self.assertEqual(next(deduper), '1')
         self.assertEqual(next(deduper), '3')
 
         if key in (hash, passthrough):
-            if isinstance(deduped, collections.Mapping):
+            if isinstance(deduped, Mapping):
                 self.assertEqual(deduped.keys(), [key('1'), key('3')])
             else:
-                self.assertEqual(deduped, set([key('1'), key('3')]))
+                self.assertEqual(deduped, {key('1'), key('3')})
 
         self.assertEqual(next(deduper), '2')
         self.assertEqual(next(deduper), '4')
 
         if key in (hash, passthrough):
-            if isinstance(deduped, collections.Mapping):
+            if isinstance(deduped, Mapping):
                 self.assertEqual(deduped.keys(), [key(i) for i in self.strs])
             else:
-                self.assertEqual(deduped, set(key(i) for i in self.strs))
+                self.assertEqual(deduped, {key(i) for i in self.strs})
 
         self.assertRaises(StopIteration, next, deduper)
 
@@ -513,7 +516,7 @@ class TestFilterUnique(TestCase):
 
     def test_OrderedDict(self):
         """Test filter_unique with a OrderedDict."""
-        deduped = tools.OrderedDict()
+        deduped = OrderedDict()
         deduper = tools.filter_unique(self.ints, container=deduped)
         self._test_dedup_int(deduped, deduper)
 
@@ -546,11 +549,11 @@ class TestFilterUnique(TestCase):
         # Two objects which may be equal do not necessary have the same id.
         deduped = set()
         deduper = tools.filter_unique(self.decs, container=deduped, key=id)
-        self.assertEqual(len(deduped), 0)
+        self.assertIsEmpty(deduped)
         for _ in self.decs:
             self.assertEqual(id(next(deduper)), deduped.pop())
         self.assertRaises(StopIteration, next, deduper)
-        # No. of Decimal with distinct ids != no. of Decimal with distinct value.
+        # len(Decimal with distinct ids) != len(Decimal with distinct value).
         deduper_ids = list(tools.filter_unique(self.decs, key=id))
         self.assertNotEqual(len(deduper_ids), len(set(deduper_ids)))
 
@@ -565,14 +568,6 @@ class TestFilterUnique(TestCase):
         deduped = set()
         deduper = tools.filter_unique(self.strs, container=deduped, key=hash)
         self._test_dedup_str(deduped, deduper, hash)
-
-    @unittest.skipIf(not tools.PY2,
-                     'str in Py3 behave like objects and id as key fails')
-    def test_str_id(self):
-        """Test str using id as key."""
-        deduped = set()
-        deduper = tools.filter_unique(self.strs, container=deduped, key=id)
-        self._test_dedup_str(deduped, deduper, id)
 
     def test_for_resumable(self):
         """Test filter_unique is resumable after a for loop."""
@@ -593,7 +588,7 @@ class TestFilterUnique(TestCase):
         deduper = tools.filter_unique(self.ints, container=deduped)
         deduped_out = list(deduper)
         self.assertCountEqual(deduped, deduped_out)
-        self.assertEqual(deduped, set([2, 4]))
+        self.assertEqual(deduped, {2, 4})
 
     def test_process_again(self):
         """Test filter_unique with an ignoring container."""
@@ -601,7 +596,7 @@ class TestFilterUnique(TestCase):
         deduper = tools.filter_unique(self.ints, container=deduped)
         deduped_out = list(deduper)
         self.assertEqual(deduped_out, [1, 3, 2, 1, 1, 4])
-        self.assertEqual(deduped, set([2, 4]))
+        self.assertEqual(deduped, {2, 4})
 
     def test_stop(self):
         """Test filter_unique with an ignoring container."""
@@ -610,7 +605,7 @@ class TestFilterUnique(TestCase):
         deduper = tools.filter_unique(self.ints, container=deduped)
         deduped_out = list(deduper)
         self.assertCountEqual(deduped, deduped_out)
-        self.assertEqual(deduped, set([1, 3]))
+        self.assertEqual(deduped, {1, 3})
 
         # And it should not resume
         self.assertRaises(StopIteration, next, deduper)
@@ -620,87 +615,10 @@ class TestFilterUnique(TestCase):
         deduper = tools.filter_unique(self.ints, container=deduped)
         deduped_out = list(deduper)
         self.assertCountEqual(deduped, deduped_out)
-        self.assertEqual(deduped, set([1, 2, 3]))
+        self.assertEqual(deduped, {1, 2, 3})
 
         # And it should not resume
         self.assertRaises(StopIteration, next, deduper)
-
-
-class MetaTestArgSpec(MetaTestCaseClass):
-
-    """Metaclass to create dynamically the tests. Set the net flag to false."""
-
-    def __new__(cls, name, bases, dct):
-        """Create a new test case class."""
-        def create_test(method):
-            def test_method(self):
-                """Test getargspec."""
-                # all expect at least self and param
-                expected = method(1, 2)
-                returned = self.getargspec(method)
-                self.assertEqual(returned, expected)
-                self.assertIsInstance(returned, self.expected_class)
-                self.assertNoDeprecation()
-            return test_method
-
-        for attr, tested_method in list(dct.items()):
-            if attr.startswith('_method_test_'):
-                suffix = attr[len('_method_test_'):]
-                cls.add_method(dct, 'test_method_' + suffix,
-                               create_test(tested_method),
-                               doc_suffix='on {0}'.format(suffix))
-
-        dct['net'] = False
-        return super(MetaTestArgSpec, cls).__new__(cls, name, bases, dct)
-
-
-@add_metaclass
-class TestArgSpec(DeprecationTestCase):
-
-    """Test getargspec and ArgSpec from tools."""
-
-    __metaclass__ = MetaTestArgSpec
-
-    expected_class = tools.ArgSpec
-
-    def _method_test_args(self, param):
-        """Test method with two positional arguments."""
-        return (['self', 'param'], None, None, None)
-
-    def _method_test_kwargs(self, param=42):
-        """Test method with one positional and one keyword argument."""
-        return (['self', 'param'], None, None, (42,))
-
-    def _method_test_varargs(self, param, *var):
-        """Test method with two positional arguments and var args."""
-        return (['self', 'param'], 'var', None, None)
-
-    def _method_test_varkwargs(self, param, **var):
-        """Test method with two positional arguments and var kwargs."""
-        return (['self', 'param'], None, 'var', None)
-
-    def _method_test_vars(self, param, *args, **kwargs):
-        """Test method with two positional arguments and both var args."""
-        return (['self', 'param'], 'args', 'kwargs', None)
-
-    def getargspec(self, method):
-        """Call tested getargspec function."""
-        return tools.getargspec(method)
-
-
-@unittest.skipIf(tools.PYTHON_VERSION >= (3, 6), 'removed in Python 3.6')
-class TestPythonArgSpec(TestArgSpec):
-
-    """Test the same tests using Python's implementation."""
-
-    expected_class = inspect.ArgSpec
-
-    def getargspec(self, method):
-        """Call inspect's getargspec function."""
-        with warnings.catch_warnings():
-            if tools.PYTHON_VERSION >= (3, 5):
-                warnings.simplefilter('ignore', DeprecationWarning)
-            return inspect.getargspec(method)
 
 
 class TestFileModeChecker(TestCase):
@@ -717,7 +635,7 @@ class TestFileModeChecker(TestCase):
 
     def setUp(self):
         """Patch a variety of dependencies."""
-        super(TestFileModeChecker, self).setUp()
+        super().setUp()
         self.stat = self.patch('os.stat')
         self.chmod = self.patch('os.chmod')
         self.file = '~FakeFile'
@@ -759,7 +677,7 @@ class TestFileShaCalculator(TestCase):
 
     def setUp(self):
         """Setup tests."""
-        super(TestFileShaCalculator, self).setUp()
+        super().setUp()
 
     def test_md5_complete_calculation(self):
         """Test md5 of complete file."""
@@ -820,7 +738,7 @@ class Foo(object):
     _bar = 'baz'
 
     @classproperty
-    def bar(cls):  # noqa: N805
+    def bar(cls):
         """Class property method."""
         return cls._bar
 
@@ -837,8 +755,21 @@ class TestClassProperty(TestCase):
         self.assertEqual(Foo.bar, Foo._bar)
 
 
+class TestMergeGenerator(TestCase):
+
+    """Test merging generators."""
+
+    net = False
+
+    def test_roundrobin_generators(self):
+        """Test merge_generators generator."""
+        gen = range(5)
+        result = list(tools.roundrobin_generators(gen, 'ABC'))
+        self.assertEqual(result, [0, 'A', 1, 'B', 2, 'C', 3, 4])
+        result = ''.join(tools.roundrobin_generators('HlWrd', 'e', 'lool'))
+        self.assertEqual(result, 'HelloWorld')
+
+
 if __name__ == '__main__':  # pragma: no cover
-    try:
+    with suppress(SystemExit):
         unittest.main()
-    except SystemExit:
-        pass

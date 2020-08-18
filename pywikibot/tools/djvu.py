@@ -2,24 +2,20 @@
 # -*- coding: utf-8 -*-
 """Wrapper around djvulibre to access djvu files properties and content."""
 #
-# (C) Pywikibot team, 2015-2017
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
+from collections import Counter
 import os
 import re
 import subprocess
 
 import pywikibot
 
-from pywikibot.tools import (
-    Counter,
-    deprecated, deprecated_args,
-    StringTypes,
-    UnicodeType,
-)
+from pywikibot.tools import deprecated, deprecated_args
 
 
 def _call_cmd(args, lib='djvulibre'):
@@ -27,10 +23,10 @@ def _call_cmd(args, lib='djvulibre'):
     Tiny wrapper around subprocess.Popen().
 
     @param args: same as Popen()
-    @type args: sequence or string
+    @type args: str or typing.Sequence[string]
 
     @param library: library to be logged in logging messages
-    @type library: string
+    @type library: str
 
     @param log: log process output; errors are always logged.
     @type library: bool
@@ -39,10 +35,9 @@ def _call_cmd(args, lib='djvulibre'):
     @return: returns a tuple (res, stdoutdata), where
         res is True if dp.returncode != 0 else False
     """
-    if not isinstance(args, StringTypes):
-        # upcast if any param in sequence args is not in StringTypes
-        args = [str(a) if not isinstance(a, StringTypes) else a for a in args]
-        cmd = ' '.join(args)
+    if not isinstance(args, str):
+        # upcast any param in sequence args to str
+        cmd = ' '.join(str(a) for a in args)
     else:
         cmd = args
 
@@ -59,11 +54,11 @@ def _call_cmd(args, lib='djvulibre'):
     return (True, stdoutdata)
 
 
-class DjVuFile(object):
+class DjVuFile:
 
     """Wrapper around djvulibre to access djvu files properties and content.
 
-    Perform file existance checks.
+    Perform file existence checks.
 
     Control characters in djvu text-layer are converted for convenience
     (see http://djvu.sourceforge.net/doc/man/djvused.html for control chars
@@ -72,16 +67,15 @@ class DjVuFile(object):
     """
 
     @deprecated_args(file_djvu='file')
-    def __init__(self, file):
+    def __init__(self, file: str):
         """
-        Constructor.
+        Initializer.
 
         @param file: filename (including path) to djvu file
-        @type file: string/unicode
         """
         self._filename = file
         filename = os.path.expanduser(file)
-        filename = os.path.abspath(file)
+        filename = os.path.abspath(filename)
         # Check file exists and has read permissions.
         with open(filename):
             self.file = filename
@@ -90,38 +84,26 @@ class DjVuFile(object):
         # pattern for parsing of djvudump output.
         self._pat_form = re.compile(
             r' *?FORM:DJVU *?\[\d+\] *?(?P<id>{[^\}]*?})? *?\[P(?P<n>\d+)\]')
-        self._pat_info = re.compile(r'DjVu.*?(?P<size>\d+x\d+).*?(?P<dpi>\d+) dpi')
+        self._pat_info = re.compile(
+            r'DjVu.*?(?P<size>\d+x\d+).*?(?P<dpi>\d+) dpi')
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a more complete string representation."""
-        filename = self._filename
-        if not isinstance(filename, str):
-            filename = self._filename.encode('utf-8')
         return str("{0}.{1}('{2}')").format(self.__module__,
                                             self.__class__.__name__,
-                                            filename)
+                                            self._filename)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation."""
-        filename = self._filename
-        if not isinstance(filename, str):
-            filename = self._filename.encode('utf-8')
-        return str("{0}('{1}')").format(self.__class__.__name__, filename)
-
-    def __unicode__(self):
-        """Return a unicode representation."""
-        _str = self.__str__()
-        if not isinstance(_str, UnicodeType):
-            _str = _str.decode('utf-8')
-        return _str
+        return str("{}('{}')").format(self.__class__.__name__, self._filename)
 
     @property
-    @deprecated('DjVuFile.file')
+    @deprecated('DjVuFile.file', since='2010222', future_warning=True)
     def file_djvu(self):
         """Deprecated file_djvu instance variable."""
         return self.file
 
-    def check_cache(fn):  # noqa: N805
+    def check_cache(fn):
         """Decorator to check if cache shall be cleared."""
         cache = ['_page_count', '_has_text', '_page_info']
 
@@ -134,7 +116,7 @@ class DjVuFile(object):
             return _res
         return wrapper
 
-    def check_page_number(fn):  # noqa: N805
+    def check_page_number(fn):
         """Decorator to check if page number is valid.
 
         @raises ValueError
@@ -201,7 +183,9 @@ class DjVuFile(object):
                     if m:
                         key, id = int(m.group('n')), m.group('id')
                     else:
-                        key, id = '', 1
+                        # If djvu doc has only one page,
+                        # FORM:DJVU line in djvudump has no id
+                        key, id = 1, ''
 
                 if 'INFO' in line:
                     m = self._pat_info.search(line)
@@ -281,8 +265,8 @@ class DjVuFile(object):
         size, dpi = self.get_most_common_info()
 
         # Generate white_page.
-        res, data = _call_cmd(['convert', '-size', size, 'xc:white', white_ppm],
-                              lib='ImageMagik')
+        res, data = _call_cmd(['convert', '-size', size, 'xc:white',
+                               white_ppm], lib='ImageMagik')
         if not res:
             return False
 
@@ -308,7 +292,7 @@ class DjVuFile(object):
         # Check if page processing is as expected.
         expected_id = '{%s}' % os.path.basename(white_djvu)
         assert self.number_of_images(force=True) == n_tot
-        assert self.page_info(n) == (expected_id, (size, dpi))  # white page id.
+        assert self.page_info(n) == (expected_id, (size, dpi))  # white page id
         assert self.page_info(ref_page) == info_ref_page  # ref page info.
 
         return True
@@ -331,9 +315,14 @@ class DjVuFile(object):
 
         # Check if page processing is as expected.
         # ref page info.
-        assert self.page_info(new_ref_page, force=True) == info_ref_page
-        if n_tot > 1:
-            assert self.number_of_images() == n_tot - 1
+        if n_tot > 2:
+            assert self.number_of_images(force=True) == n_tot - 1
+            # cache cleared above
+            assert self.page_info(new_ref_page) == info_ref_page
+        else:
+            # If djvu has only one page, FORM:DJVU line in djvudump has no id
+            _id, (sz, dpi) = info_ref_page
+            assert self.page_info(new_ref_page, force=True) == ('', (sz, dpi))
 
         return True
 

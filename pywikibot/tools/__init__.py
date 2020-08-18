@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """Miscellaneous helper functions (not wiki-dependent)."""
 #
-# (C) Pywikibot team, 2008-2017
+# (C) Pywikibot team, 2008-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import collections
 import gzip
 import hashlib
 import inspect
 import itertools
 import os
+import queue
 import re
 import stat
 import subprocess
@@ -21,25 +20,22 @@ import threading
 import time
 import types
 
-from distutils.version import Version
+from collections.abc import Iterator, Mapping
+from datetime import datetime
+from distutils.version import LooseVersion, Version
 from functools import wraps
+from importlib import import_module
+from inspect import getfullargspec
+from ipaddress import ip_address
+from itertools import zip_longest
 from warnings import catch_warnings, showwarning, warn
+
+from pywikibot.logging import debug
+from pywikibot.tools._unidata import _first_upper_exception
 
 PYTHON_VERSION = sys.version_info[:3]
 PY2 = (PYTHON_VERSION[0] == 2)
-
-if not PY2:
-    import queue as Queue
-
-    StringTypes = basestring = (str,)
-    UnicodeType = unicode = str
-else:
-    import Queue
-
-    StringTypes = types.StringTypes
-    UnicodeType = types.UnicodeType
-
-from pywikibot.logging import debug
+StringTypes = (str, bytes)
 
 try:
     import bz2
@@ -51,35 +47,10 @@ except ImportError as bz2_import_error:
         warn('package bz2 and bz2file were not found', ImportWarning)
         bz2 = bz2_import_error
 
-if PYTHON_VERSION < (3, 5):
-    # although deprecated in 3 completely no message was emitted until 3.5
-    ArgSpec = inspect.ArgSpec
-    getargspec = inspect.getargspec
-else:
-    ArgSpec = collections.namedtuple('ArgSpec', ['args', 'varargs', 'keywords',
-                                                 'defaults'])
-
-    def getargspec(func):
-        """Python 3 implementation using inspect.signature."""
-        sig = inspect.signature(func)
-        args = []
-        defaults = []
-        varargs = None
-        kwargs = None
-        for p in sig.parameters.values():
-            if p.kind == inspect.Parameter.VAR_POSITIONAL:
-                varargs = p.name
-            elif p.kind == inspect.Parameter.VAR_KEYWORD:
-                kwargs = p.name
-            else:
-                args += [p.name]
-                if p.default != inspect.Parameter.empty:
-                    defaults += [p.default]
-        if defaults:
-            defaults = tuple(defaults)
-        else:
-            defaults = None
-        return ArgSpec(args, varargs, kwargs, defaults)
+try:
+    import lzma
+except ImportError as lzma_import_error:
+    lzma = lzma_import_error
 
 
 _logger = 'tools'
@@ -92,77 +63,44 @@ class _NotImplementedWarning(RuntimeWarning):
     pass
 
 
-class NotImplementedClass(object):
+def is_IP(IP):  # noqa N802, N803
+    """Verify the IP address provided is valid.
 
-    """No implementation is available."""
+    No logging is performed. Use ip_address instead to catch errors.
 
-    def __init__(self, *args, **kwargs):
-        """Constructor."""
-        raise NotImplementedError(
-            '%s: %s' % (self.__class__.__name__, self.__doc__))
-
-
-if PYTHON_VERSION < (2, 7):
+    @param IP: IP address
+    @type IP: str
+    @rtype: bool
+    """
     try:
-        import future.backports.misc
-    except ImportError:
-        warn("""
-pywikibot support of Python 2.6 relies on package future for many features.
-Please upgrade to Python 2.7+ or Python 3.3+, or run:
-    "pip install future>=0.15.0"
-""", RuntimeWarning)
-        try:
-            from ordereddict import OrderedDict
-        except ImportError:
-            class OrderedDict(NotImplementedClass):
-
-                """OrderedDict not found."""
-
-                pass
-
-        try:
-            from counter import Counter
-        except ImportError:
-            class Counter(NotImplementedClass):
-
-                """Counter not found."""
-
-                pass
-        count = None
-    else:
-        Counter = future.backports.misc.Counter
-        OrderedDict = future.backports.misc.OrderedDict
-
-        try:
-            count = future.backports.misc.count
-        except AttributeError:
-            warn('Please update the "future" package to at least version '
-                 '0.15.0 to use its count.', RuntimeWarning, 2)
-            count = None
-        del future
-
-    if count is None:
-        def count(start=0, step=1):
-            """Backported C{count} to support keyword arguments and step."""
-            while True:
-                yield start
-                start += step
-
-
-else:
-    Counter = collections.Counter
-    OrderedDict = collections.OrderedDict
-    count = itertools.count
-
-
-def has_module(module):
-    """Check whether a module can be imported."""
-    try:
-        __import__(module)
-    except ImportError:
-        return False
+        ip_address(IP)
+    except ValueError:
+        pass
     else:
         return True
+    return False
+
+
+def has_module(module, version=None):
+    """Check whether a module can be imported."""
+    try:
+        m = import_module(module)
+    except ImportError:
+        pass
+    else:
+        if version is None:
+            return True
+        try:
+            module_version = LooseVersion(m.__version__)
+        except AttributeError:
+            pass
+        else:
+            if module_version >= LooseVersion(version):
+                return True
+            else:
+                warn('Module version {} is lower than requested version {}'
+                     .format(module_version, version), ImportWarning)
+    return False
 
 
 def empty_iterator():
@@ -172,22 +110,14 @@ def empty_iterator():
     yield
 
 
-def py2_encode_utf_8(func):
-    """Decorator to optionally encode the string result of a function on Python 2.x."""
-    if PY2:
-        return lambda s: func(s).encode('utf-8')
-    else:
-        return func
-
-
-class classproperty(object):  # noqa: N801
+class classproperty:  # noqa: N801
 
     """
-    Metaclass to accesss a class method as a property.
+    Descriptor class to access a class method as a property.
 
     This class may be used as a decorator::
 
-        class Foo(object):
+        class Foo:
 
             _bar = 'baz'  # a class property
 
@@ -201,6 +131,7 @@ class classproperty(object):  # noqa: N801
     def __init__(self, cls_method):
         """Hold the class method."""
         self.method = cls_method
+        self.__doc__ = self.method.__doc__
 
     def __get__(self, instance, owner):
         """Get the attribute of the owner class by its method."""
@@ -226,7 +157,7 @@ class suppress_warnings(catch_warnings):  # noqa: N801
         @type message: str
         @param category: A class (a subclass of Warning) of which the warning
             category must be a subclass in order to match.
-        @type category: Warning
+        @type category: type
         @param filename: A string containing a regular expression that the
             start of the path to the warning module must match.
             (case-sensitive)
@@ -235,15 +166,15 @@ class suppress_warnings(catch_warnings):  # noqa: N801
         self.message_match = re.compile(message, re.I).match
         self.category = category
         self.filename_match = re.compile(filename).match
-        super(suppress_warnings, self).__init__(record=True)
+        super().__init__(record=True)
 
     def __enter__(self):
         """Catch all warnings and store them in `self.log`."""
-        self.log = super(suppress_warnings, self).__enter__()
+        self.log = super().__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Stop logging warnings and show those that do not match to params."""
-        super(suppress_warnings, self).__exit__()
+        super().__exit__()
         for warning in self.log:
             if (
                 not issubclass(warning.category, self.category)
@@ -263,18 +194,8 @@ class suppress_warnings(catch_warnings):  # noqa: N801
         return suppressed_func
 
 
-class UnicodeMixin(object):
-
-    """Mixin class to add __str__ method in Python 2 or 3."""
-
-    @py2_encode_utf_8
-    def __str__(self):
-        """Return the unicode representation as the str representation."""
-        return self.__unicode__()
-
-
 # From http://python3porting.com/preparing.html
-class ComparableMixin(object):
+class ComparableMixin:
 
     """Mixin class to allow comparing to other objects which are comparable."""
 
@@ -303,13 +224,11 @@ class ComparableMixin(object):
         return other != self._cmpkey()
 
 
-class DotReadableDict(UnicodeMixin):
+class DotReadableDict:
 
     """Parent class of Revision() and FileInfo().
 
-    Provide:
-    - __getitem__(), __unicode__() and __repr__().
-
+    Provide: __getitem__() and __repr__().
     """
 
     def __getitem__(self, key):
@@ -322,17 +241,6 @@ class DotReadableDict(UnicodeMixin):
 
         """
         return getattr(self, key)
-
-    def __unicode__(self):
-        """Return string representation."""
-        # TODO: This is more efficient if the PY2 test is done during
-        # class instantiation, and not inside the method.
-        if not PY2:
-            return repr(self.__dict__)
-        else:
-            _content = u', '.join(
-                u'{0}: {1}'.format(k, v) for k, v in self.__dict__.items())
-            return u'{{{0}}}'.format(_content)
 
     def __repr__(self):
         """Return a more complete string representation."""
@@ -349,7 +257,7 @@ class FrozenDict(dict):
 
     def __init__(self, data=None, error=None):
         """
-        Constructor.
+        Initializer.
 
         @param data: mapping to freeze
         @type data: mapping
@@ -360,7 +268,7 @@ class FrozenDict(dict):
             args = [data]
         else:
             args = []
-        super(FrozenDict, self).__init__(*args)
+        super().__init__(*args)
         self._error = error or 'FrozenDict: not writable'
 
     def update(self, *args, **kwargs):
@@ -370,30 +278,7 @@ class FrozenDict(dict):
     __setitem__ = update
 
 
-def concat_options(message, line_length, options):
-    """Concatenate options."""
-    indent = len(message) + 2
-    line_length -= indent
-    option_msg = u''
-    option_line = u''
-    for option in options:
-        if option_line:
-            option_line += ', '
-        # +1 for ','
-        if len(option_line) + len(option) + 1 > line_length:
-            if option_msg:
-                option_msg += '\n' + ' ' * indent
-            option_msg += option_line[:-1]  # remove space
-            option_line = ''
-        option_line += option
-    if option_line:
-        if option_msg:
-            option_msg += '\n' + ' ' * indent
-        option_msg += option_line
-    return u'{0} ({1}):'.format(message, option_msg)
-
-
-class LazyRegex(object):
+class LazyRegex:
 
     """
     Regex object that obtains and compiles the regex on usage.
@@ -403,7 +288,7 @@ class LazyRegex(object):
 
     def __init__(self, pattern, flags=0):
         """
-        Constructor.
+        Initializer.
 
         @param pattern: L{re} regex pattern
         @type pattern: str or callable
@@ -412,11 +297,11 @@ class LazyRegex(object):
         """
         self.raw = pattern
         self.flags = flags
-        super(LazyRegex, self).__init__()
+        super().__init__()
 
     @property
     def raw(self):
-        """Get raw property."""
+        """The raw property."""
         if callable(self._raw):
             self._raw = self._raw()
 
@@ -424,18 +309,16 @@ class LazyRegex(object):
 
     @raw.setter
     def raw(self, value):
-        """Set raw property."""
         self._raw = value
         self._compiled = None
 
     @property
     def flags(self):
-        """Get flags property."""
+        """The flags property."""
         return self._flags
 
     @flags.setter
     def flags(self, value):
-        """Set flags property."""
         self._flags = value
         self._compiled = None
 
@@ -458,9 +341,9 @@ class DeprecatedRegex(LazyRegex):
 
     """Regex object that issues a deprecation notice."""
 
-    def __init__(self, pattern, flags=0, name=None, instead=None):
+    def __init__(self, pattern, flags=0, name=None, instead=None, since=None):
         """
-        Constructor.
+        Initializer.
 
         If name is None, the regex pattern will be used as part of
         the deprecation warning.
@@ -471,15 +354,17 @@ class DeprecatedRegex(LazyRegex):
             of the deprecated name
         @type instead: str
         """
-        super(DeprecatedRegex, self).__init__(pattern, flags)
+        super().__init__(pattern, flags)
         self._name = name or self.raw
         self._instead = instead
+        self._since = since
 
     def __getattr__(self, attr):
         """Issue deprecation warning."""
         issue_deprecation_warning(
-            self._name, self._instead, 2)
-        return super(DeprecatedRegex, self).__getattr__(attr)
+            self._name, self._instead, warning_class=FutureWarning,
+            since=self._since)
+        return super().__getattr__(attr)
 
 
 def first_lower(string):
@@ -497,13 +382,12 @@ def first_upper(string):
 
     Empty strings are supported. The original string is not changed.
 
-    Warning: Python 2 and 3 capitalize "ß" differently. MediaWiki does
-    not capitalize ß at the beginning. See T179115.
+    @note: MediaWiki doesn't capitalize some characters the same way as Python.
+        This function tries to be close to MediaWiki's capitalize function in
+        title.php. See T179115 and T200357.
     """
     first = string[:1]
-    if first != 'ß':
-        first = first.upper()
-    return first + string[1:]
+    return (_first_upper_exception(first) or first.upper()) + string[1:]
 
 
 def normalize_username(username):
@@ -537,7 +421,7 @@ class MediaWikiVersion(Version):
     """
 
     MEDIAWIKI_VERSION = re.compile(
-        r'^(\d+(?:\.\d+)+)(-?wmf\.?(\d+)|alpha|beta(\d+)|-?rc\.?(\d+)|.*)?$')
+        r'(\d+(?:\.\d+)+)(-?wmf\.?(\d+)|alpha|beta(\d+)|-?rc\.?(\d+)|.*)?$')
 
     @classmethod
     def from_generator(cls, generator):
@@ -568,7 +452,8 @@ class MediaWikiVersion(Version):
             for handled in ('wmf', 'alpha', 'beta', 'rc'):
                 # if any of those pops up here our parser has failed
                 assert handled not in version_match.group(2), \
-                    'Found "{0}" in "{1}"'.format(handled, version_match.group(2))
+                    'Found "{0}" in "{1}"'.format(handled,
+                                                  version_match.group(2))
             if version_match.group(2):
                 debug('Additional unused version part '
                       '"{0}"'.format(version_match.group(2)),
@@ -582,7 +467,7 @@ class MediaWikiVersion(Version):
         return '.'.join(str(v) for v in self.version) + self.suffix
 
     def _cmp(self, other):
-        if isinstance(other, basestring):
+        if isinstance(other, StringTypes):
             other = MediaWikiVersion(other)
 
         if self.version > other.version:
@@ -594,9 +479,6 @@ class MediaWikiVersion(Version):
         if self._dev_version < other._dev_version:
             return -1
         return 0
-
-    if PY2:
-        __cmp__ = _cmp
 
 
 class ThreadedGenerator(threading.Thread):
@@ -623,39 +505,38 @@ class ThreadedGenerator(threading.Thread):
 
     """
 
-    def __init__(self, group=None, target=None, name="GeneratorThread",
+    def __init__(self, group=None, target=None, name='GeneratorThread',
                  args=(), kwargs=None, qsize=65536):
-        """Constructor. Takes same keyword arguments as threading.Thread.
+        """Initializer. Takes same keyword arguments as threading.Thread.
 
         target must be a generator function (or other callable that returns
         an iterable object).
 
         @param qsize: The size of the lookahead queue. The larger the qsize,
-        the more values will be computed in advance of use (which can eat
-        up memory and processor time).
+            the more values will be computed in advance of use (which can eat
+            up memory and processor time).
         @type qsize: int
-
         """
         if kwargs is None:
             kwargs = {}
         if target:
             self.generator = target
-        if not hasattr(self, "generator"):
-            raise RuntimeError("No generator for ThreadedGenerator to run.")
+        if not hasattr(self, 'generator'):
+            raise RuntimeError('No generator for ThreadedGenerator to run.')
         self.args, self.kwargs = args, kwargs
         threading.Thread.__init__(self, group=group, name=name)
-        self.queue = Queue.Queue(qsize)
+        self.queue = queue.Queue(qsize)
         self.finished = threading.Event()
 
     def __iter__(self):
         """Iterate results from the queue."""
-        if not self.isAlive() and not self.finished.isSet():
+        if not self.is_alive() and not self.finished.isSet():
             self.start()
         # if there is an item in the queue, yield it, otherwise wait
         while not self.finished.isSet():
             try:
                 yield self.queue.get(True, 0.25)
-            except Queue.Empty:
+            except queue.Empty:
                 pass
             except KeyboardInterrupt:
                 self.stop()
@@ -678,7 +559,7 @@ class ThreadedGenerator(threading.Thread):
                     return
                 try:
                     self.queue.put_nowait(result)
-                except Queue.Full:
+                except queue.Full:
                     time.sleep(0.25)
                     continue
                 break
@@ -717,7 +598,7 @@ def itergroup(iterable, size):
 
 
 def islice_with_ellipsis(iterable, *args, **kwargs):
-    u"""
+    """
     Generator which yields the first n elements of the iterable.
 
     If more elements are available and marker is True, it returns an extra
@@ -778,21 +659,28 @@ class ThreadList(list):
 
     """
 
-    _logger = "threadlist"
+    _logger = 'threadlist'
 
-    def __init__(self, limit=128, *args):
-        """Constructor."""
+    def __init__(self, limit=128, wait_time=2, *args):
+        """Initializer.
+
+        @param limit: the number of simultaneous threads
+        @type limit: int
+        @param wait_time: how long to wait if active threads exceeds limit
+        @type wait_time: int or float
+        """
         self.limit = limit
-        super(ThreadList, self).__init__(*args)
+        self.wait_time = wait_time
+        super().__init__(*args)
         for item in self:
-            if not isinstance(threading.Thread, item):
+            if not isinstance(item, threading.Thread):
                 raise TypeError("Cannot add '%s' to ThreadList" % type(item))
 
     def active_count(self):
-        """Return the number of alive threads, and delete all non-alive ones."""
+        """Return the number of alive threads and delete all non-alive ones."""
         cnt = 0
         for item in self[:]:
-            if item.isAlive():
+            if item.is_alive():
                 cnt += 1
             else:
                 self.remove(item)
@@ -803,8 +691,8 @@ class ThreadList(list):
         if not isinstance(thd, threading.Thread):
             raise TypeError("Cannot append '%s' to ThreadList" % type(thd))
         while self.active_count() >= self.limit:
-            time.sleep(2)
-        super(ThreadList, self).append(thd)
+            time.sleep(self.wait_time)
+        super().append(thd)
         thd.start()
         debug("thread %d ('%s') started" % (len(self), type(thd)),
               self._logger)
@@ -812,10 +700,10 @@ class ThreadList(list):
     def stop_all(self):
         """Stop all threads the pool."""
         if self:
-            debug(u'EARLY QUIT: Threads: %d' % len(self), self._logger)
+            debug('EARLY QUIT: Threads: %d' % len(self), self._logger)
         for thd in self:
             thd.stop()
-            debug(u'EARLY QUIT: Queue size left in %s: %s'
+            debug('EARLY QUIT: Queue size left in %s: %s'
                   % (thd, thd.queue.qsize()), self._logger)
 
 
@@ -884,7 +772,7 @@ def intersect_generators(genlist):
                 if active < n_gen and n_gen - max_cache > active:
                     thrlist.stop_all()
                     return
-            except Queue.Empty:
+            except queue.Empty:
                 pass
             except KeyboardInterrupt:
                 thrlist.stop_all()
@@ -894,18 +782,35 @@ def intersect_generators(genlist):
                     return
 
 
+def roundrobin_generators(*iterables):
+    """Yield simultaneous from each iterable.
+
+    Sample:
+    >>> tuple(roundrobin_generators('ABC', range(5)))
+    ('A', 0, 'B', 1, 'C', 2, 3, 4)
+
+    @param iterables: any iterable to combine in roundrobin way
+    @type iterables: iterable
+    @return: the combined generator of iterables
+    @rtype: generator
+    """
+    return (item
+            for item in itertools.chain.from_iterable(zip_longest(*iterables))
+            if item is not None)
+
+
 def filter_unique(iterable, container=None, key=None, add=None):
     """
     Yield unique items from an iterable, omitting duplicates.
 
-    By default, to provide uniqueness, it puts the generated items into
-    the keys of a dict created as a local variable, each with a value of True.
-    It only yields items which are not already present in the local dict.
+    By default, to provide uniqueness, it puts the generated items into a
+    set created as a local variable. It only yields items which are not
+    already present in the local set.
 
     For large collections, this is not memory efficient, as a strong reference
-    to every item is kept in a local dict which can not be cleared.
+    to every item is kept in a local set which can not be cleared.
 
-    Also, the local dict cant be re-used when chaining unique operations on
+    Also, the local set can't be re-used when chaining unique operations on
     multiple generators.
 
     To avoid these issues, it is advisable for the caller to provide their own
@@ -922,7 +827,7 @@ def filter_unique(iterable, container=None, key=None, add=None):
     Note: This is not thread safe.
 
     @param iterable: the source iterable
-    @type iterable: collections.Iterable
+    @type iterable: collections.abc.Iterable
     @param container: storage of seen items
     @type container: type
     @param key: function to convert the item to a key
@@ -931,7 +836,7 @@ def filter_unique(iterable, container=None, key=None, add=None):
     @type add: callable
     """
     if container is None:
-        container = {}
+        container = set()
 
     if not add:
         if hasattr(container, 'add'):
@@ -960,13 +865,13 @@ class CombinedError(KeyError, IndexError):
     """An error that gets caught by both KeyError and IndexError."""
 
 
-class EmptyDefault(str, collections.Mapping):
+class EmptyDefault(str, Mapping):
 
     """
     A default for a not existing siteinfo property.
 
     It should be chosen if there is no better default known. It acts like an
-    empty collections, so it can be iterated through it savely if treated as a
+    empty collections, so it can be iterated through it safely if treated as a
     list, tuple, set or dictionary. It is also basically an empty string.
 
     Accessing a value via __getitem__ will result in an combined KeyError and
@@ -991,7 +896,7 @@ class EmptyDefault(str, collections.Mapping):
 EMPTY_DEFAULT = EmptyDefault()
 
 
-class SelfCallMixin(object):
+class SelfCallMixin:
 
     """
     Return self when called.
@@ -1004,7 +909,7 @@ class SelfCallMixin(object):
         """Do nothing and just return itself."""
         if hasattr(self, '_own_desc'):
             issue_deprecation_warning('Calling {0}'.format(self._own_desc),
-                                      'it directly', 2)
+                                      'it directly', since='20150515')
         return self
 
 
@@ -1012,24 +917,17 @@ class SelfCallDict(SelfCallMixin, dict):
 
     """Dict with SelfCallMixin."""
 
+    pass
+
 
 class SelfCallString(SelfCallMixin, str):
 
-    """Unicode string with SelfCallMixin."""
+    """String with SelfCallMixin."""
+
+    pass
 
 
-class IteratorNextMixin(collections.Iterator):
-
-    """Backwards compatibility for Iterators."""
-
-    if PY2:
-
-        def next(self):
-            """Python 2 next."""
-            return self.__next__()
-
-
-class DequeGenerator(IteratorNextMixin, collections.deque):
+class DequeGenerator(Iterator, collections.deque):
 
     """A generator that allows items to be added during generating."""
 
@@ -1041,56 +939,15 @@ class DequeGenerator(IteratorNextMixin, collections.deque):
             raise StopIteration
 
 
-class ContextManagerWrapper(object):
-
-    """
-    Wraps an object in a context manager.
-
-    It is redirecting all access to the wrapped object and executes 'close' when
-    used as a context manager in with-statements. In such statements the value
-    set via 'as' is directly the wrapped object. For example:
-
-    >>> class Wrapper(object):
-    ...     def close(self): pass
-    >>> an_object = Wrapper()
-    >>> wrapped = ContextManagerWrapper(an_object)
-    >>> with wrapped as another_object:
-    ...      assert another_object is an_object
-
-    It does not subclass the object though, so isinstance checks will fail
-    outside a with-statement.
-    """
-
-    def __init__(self, wrapped):
-        """Create a new wrapper."""
-        super(ContextManagerWrapper, self).__init__()
-        super(ContextManagerWrapper, self).__setattr__('_wrapped', wrapped)
-
-    def __enter__(self):
-        """Enter a context manager and use the wrapped object directly."""
-        return self._wrapped
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        """Call close on the wrapped object when exiting a context manager."""
-        self._wrapped.close()
-
-    def __getattr__(self, name):
-        """Get the attribute from the wrapped object."""
-        return getattr(self._wrapped, name)
-
-    def __setattr__(self, name, value):
-        """Set the attribute in the wrapped object."""
-        setattr(self._wrapped, name, value)
-
-
 def open_archive(filename, mode='rb', use_extension=True):
     """
     Open a file and uncompress it if needed.
 
-    This function supports bzip2, gzip and 7zip as compression containers. It
-    uses the packages available in the standard library for bzip2 and gzip so
-    they are always available. 7zip is only available when a 7za program is
-    available and only supports reading from it.
+    This function supports bzip2, gzip, 7zip, lzma, and xz as compression
+    containers. It uses the packages available in the standard library for
+    bzip2, gzip, lzma, and xz so they are always available. 7zip is only
+    available when a 7za program is available and only supports reading
+    from it.
 
     The compression is either selected via the magic number or file ending.
 
@@ -1103,27 +960,23 @@ def open_archive(filename, mode='rb', use_extension=True):
     @param mode: The mode in which the file should be opened. It may either be
         'r', 'rb', 'a', 'ab', 'w' or 'wb'. All modes open the file in binary
         mode. It defaults to 'rb'.
-    @type mode: string
-    @raises ValueError: When 7za is not available or the opening mode is unknown
-        or it tries to write a 7z archive.
+    @type mode: str
+    @raises ValueError: When 7za is not available or the opening mode is
+        unknown or it tries to write a 7z archive.
     @raises FileNotFoundError: When the filename doesn't exist and it tries
         to read from it or it tries to determine the compression algorithm (or
         IOError on Python 2).
     @raises OSError: When it's not a 7z archive but the file extension is 7z.
         It is also raised by bz2 when its content is invalid. gzip does not
         immediately raise that error but only on reading it.
+    @raises lzma.LZMAError: When error occurs during compression or
+        decompression or when initializing the state with lzma or xz.
+    @raises ImportError: When file is compressed with bz2 but neither bz2 nor
+        bz2file is importable, or when file is compressed with lzma or xz but
+        lzma is not importable.
     @return: A file-like object returning the uncompressed data in binary mode.
-        Before Python 2.7 the GzipFile object and before 2.7.1 the BZ2File are
-        wrapped in a ContextManagerWrapper with its advantages/disadvantages.
     @rtype: file-like object
     """
-    def wrap(wrapped, sub_ver):
-        """Wrap in a wrapper when this is below Python version 2.7."""
-        if PYTHON_VERSION < (2, 7, sub_ver):
-            return ContextManagerWrapper(wrapped)
-        else:
-            return wrapped
-
     if mode in ('r', 'a', 'w'):
         mode += 'b'
     elif mode not in ('rb', 'ab', 'wb'):
@@ -1144,16 +997,19 @@ def open_archive(filename, mode='rb', use_extension=True):
             extension = 'gz'
         elif magic_number.startswith(b"7z\xBC\xAF'\x1C"):
             extension = '7z'
+        # Unfortunately, legacy LZMA container format has no magic number
+        elif magic_number.startswith(b'\xFD7zXZ\x00'):
+            extension = 'xz'
         else:
             extension = ''
 
     if extension == 'bz2':
         if isinstance(bz2, ImportError):
             raise bz2
-        return wrap(bz2.BZ2File(filename, mode), 1)
-    elif extension == 'gz':
-        return wrap(gzip.open(filename, mode), 0)
-    elif extension == '7z':
+        return bz2.BZ2File(filename, mode)
+    if extension == 'gz':
+        return gzip.open(filename, mode)
+    if extension == '7z':
         if mode != 'rb':
             raise NotImplementedError('It is not possible to write a 7z file.')
 
@@ -1174,14 +1030,21 @@ def open_archive(filename, mode='rb', use_extension=True):
                     'Unexpected STDERR output from 7za {0}'.format(stderr))
             else:
                 return process.stdout
-    else:
-        # assume it's an uncompressed file
-        return open(filename, 'rb')
+    if extension == 'lzma':
+        if isinstance(lzma, ImportError):
+            raise lzma
+        return lzma.open(filename, mode, format=lzma.FORMAT_ALONE)
+    if extension == 'xz':
+        if isinstance(lzma, ImportError):
+            raise lzma
+        return lzma.open(filename, mode, format=lzma.FORMAT_XZ)
+    # assume it's an uncompressed file
+    return open(filename, 'rb')
 
 
 def merge_unique_dicts(*args, **kwargs):
     """
-    Return a merged dict and making sure that the original dicts had unique keys.
+    Return a merged dict and make sure that the original dicts keys are unique.
 
     The positional arguments are the dictionaries to be merged. It is also
     possible to define an additional dict using the keyword arguments.
@@ -1193,8 +1056,9 @@ def merge_unique_dicts(*args, **kwargs):
         conflicts |= set(arg.keys()) & set(result.keys())
         result.update(arg)
     if conflicts:
-        raise ValueError('Multiple dicts contain the same keys: '
-                         '{0}'.format(', '.join(sorted(unicode(key) for key in conflicts))))
+        raise ValueError('Multiple dicts contain the same keys: {0}'
+                         .format(', '.join(sorted(str(key)
+                                                  for key in conflicts))))
     return result
 
 
@@ -1216,26 +1080,6 @@ def merge_unique_dicts(*args, **kwargs):
 # a deprecator without any arguments.
 
 
-def signature(obj):
-    """
-    Safely return function Signature object (PEP 362).
-
-    inspect.signature was introduced in 3.3, however backports are available.
-    In Python 3.3, it does not support all types of callables, and should
-    not be relied upon. Python 3.4 works correctly.
-
-    Any exception calling inspect.signature is ignored and None is returned.
-
-    @param obj: Function to inspect
-    @type obj: callable
-    @rtype: inpect.Signature or None
-    """
-    try:
-        return inspect.signature(obj)
-    except (AttributeError, ValueError):
-        return None
-
-
 def add_decorated_full_name(obj, stacklevel=1):
     """Extract full object name, including class, and store in __full_name__.
 
@@ -1255,12 +1099,11 @@ def add_decorated_full_name(obj, stacklevel=1):
     frame = sys._getframe(stacklevel + 1)
     class_name = frame.f_code.co_name
     if class_name and class_name != '<module>':
-        obj.__full_name__ = (obj.__module__ + '.' +
-                             class_name + '.' +
-                             obj.__name__)
+        obj.__full_name__ = '{}.{}.{}'.format(
+            obj.__module__, class_name, obj.__name__)
     else:
-        obj.__full_name__ = (obj.__module__ + '.' +
-                             obj.__name__)
+        obj.__full_name__ = '{}.{}'.format(
+            obj.__module__, obj.__name__)
 
 
 def manage_wrapping(wrapper, obj):
@@ -1268,7 +1111,7 @@ def manage_wrapping(wrapper, obj):
     wrapper.__doc__ = obj.__doc__
     wrapper.__name__ = obj.__name__
     wrapper.__module__ = obj.__module__
-    wrapper.__signature__ = signature(obj)
+    wrapper.__signature__ = inspect.signature(obj)
 
     if not hasattr(obj, '__full_name__'):
         add_decorated_full_name(obj, 2)
@@ -1318,9 +1161,7 @@ def add_full_name(obj):
         if the decorated decorator was called without arguments.
 
         @param outer_args: args
-        @type outer_args: list
         @param outer_kwargs: kwargs
-        @type outer_kwargs: dict
         """
         def inner_wrapper(*args, **kwargs):
             """Replacement function.
@@ -1338,12 +1179,12 @@ def add_full_name(obj):
         inner_wrapper.__doc__ = obj.__doc__
         inner_wrapper.__name__ = obj.__name__
         inner_wrapper.__module__ = obj.__module__
-        inner_wrapper.__signature__ = signature(obj)
+        inner_wrapper.__signature__ = inspect.signature(obj)
 
         # The decorator being decorated may have args, so both
         # syntax need to be supported.
-        if (len(outer_args) == 1 and len(outer_kwargs) == 0 and
-                callable(outer_args[0])):
+        if (len(outer_args) == 1 and len(outer_kwargs) == 0
+                and callable(outer_args[0])):
             add_decorated_full_name(outer_args[0])
             return obj(outer_args[0])
         else:
@@ -1355,17 +1196,63 @@ def add_full_name(obj):
     return outer_wrapper
 
 
-def issue_deprecation_warning(name, instead, depth, warning_class=None):
-    """Issue a deprecation warning."""
-    if instead:
-        if warning_class is None:
-            warning_class = DeprecationWarning
-        warn(u'{0} is deprecated; use {1} instead.'.format(name, instead),
-             warning_class, depth + 1)
+def _build_msg_string(instead, since):
+    """Build a deprecation warning message format string."""
+    if not since:
+        since = ''
+    elif '.' in since:
+        since = ' since release ' + since
     else:
-        if warning_class is None:
-            warning_class = _NotImplementedWarning
-        warn('{0} is deprecated.'.format(name), warning_class, depth + 1)
+        year_str = month_str = day_str = ''
+        days = (datetime.utcnow() - datetime.strptime(since, '%Y%m%d')).days
+        years = days // 365
+        days = days % 365
+        months = days // 30
+        days = days % 30
+        if years == 1:
+            years = 0
+            months += 12
+        if years:
+            year_str = '{0} years'.format(years)
+        else:
+            day_str = '{0} day{1}'.format(days, 's' if days != 1 else '')
+        if months:
+            month_str = '{0} month{1}'.format(
+                months, 's' if months != 1 else '')
+        if year_str and month_str:
+            year_str += ' and '
+        if month_str and day_str:
+            month_str += ' and '
+        since = ' for {0}{1}{2}'.format(year_str, month_str, day_str)
+    if instead:
+        msg = '{{0}} is deprecated{since}; use {{1}} instead.'
+    else:
+        msg = '{{0}} is deprecated{since}.'
+    return msg.format(since=since)
+
+
+def issue_deprecation_warning(name, instead=None, depth=2, warning_class=None,
+                              since=None):
+    """Issue a deprecation warning.
+
+    @param name: the name of the deprecated object
+    @type name: str
+    @param instead: suggested replacement for the deprecated object
+    @type instead: str or None
+    @param depth: depth + 1 will be used as stacklevel for the warnings
+    @type depth: int
+    @param warning_class: a warning class (category) to be used, defaults to
+        DeprecationWarning
+    @type warning_class: type
+    @param since: a timestamp string of the date when the method was
+        deprecated (form 'YYYYMMDD') or a version string.
+    @type since: str or None
+    """
+    msg = _build_msg_string(instead, since)
+    if warning_class is None:
+        warning_class = (DeprecationWarning
+                         if instead else _NotImplementedWarning)
+    warn(msg.format(name, instead), warning_class, depth + 1)
 
 
 @add_full_name
@@ -1373,7 +1260,13 @@ def deprecated(*args, **kwargs):
     """Decorator to output a deprecation warning.
 
     @kwarg instead: if provided, will be used to specify the replacement
-    @type instead: string
+    @type instead: str
+    @kwarg since: a timestamp string of the date when the method was
+        deprecated (form 'YYYYMMDD') or a version string.
+    @type since: str
+    @kwarg future_warning: if True a FutureWarning will be thrown,
+        otherwise it defaults to DeprecationWarning
+    @type future_warning: bool
     """
     def decorator(obj):
         """Outer wrapper.
@@ -1387,15 +1280,15 @@ def deprecated(*args, **kwargs):
             """Replacement function.
 
             @param args: args passed to the decorated function.
-            @type args: list
             @param kwargs: kwargs passed to the decorated function.
-            @type kwargs: dict
             @return: the value returned by the decorated function
             @rtype: any
             """
             name = obj.__full_name__
             depth = get_wrapper_depth(wrapper) + 1
-            issue_deprecation_warning(name, instead, depth)
+            issue_deprecation_warning(
+                name, instead, depth, since=since,
+                warning_class=FutureWarning if future_warning else None)
             return obj(*args, **kwargs)
 
         def add_docstring(wrapper):
@@ -1435,7 +1328,10 @@ def deprecated(*args, **kwargs):
 
         return wrapper
 
-    without_parameters = len(args) == 1 and len(kwargs) == 0 and callable(args[0])
+    since = kwargs.pop('since', None)
+    future_warning = kwargs.pop('future_warning', False)
+    without_parameters = (len(args) == 1 and len(kwargs) == 0
+                          and callable(args[0]))
     if 'instead' in kwargs:
         instead = kwargs['instead']
     elif not without_parameters and len(args) == 1:
@@ -1455,17 +1351,45 @@ def deprecated(*args, **kwargs):
 
 
 def deprecate_arg(old_arg, new_arg):
-    """Decorator to declare old_arg deprecated and replace it with new_arg."""
+    """Decorator to declare old_arg deprecated and replace it with new_arg.
+
+    Usage:
+
+        @deprecate_arg('foo', 'bar')
+        def my_function(bar='baz'): pass
+        # replaces 'foo' keyword by 'bar' used by my_function
+
+        @deprecare_arg('foo', None)
+        def my_function(): pass
+        # ignores 'foo' keyword no longer used by my_function
+
+    deprecated_args decorator should be used in favour of this
+    deprecate_arg decorator but it is held to deprecate args which become
+    a reserved word in future Python releases and to prevent syntax errors.
+
+    @param old_arg: old keyword
+    @type old_arg: str
+    @param new_arg: new keyword
+    @type new_arg: str or None or bool
+    """
     return deprecated_args(**{old_arg: new_arg})
 
 
 def deprecated_args(**arg_pairs):
-    """
-    Decorator to declare multiple args deprecated.
+    """Decorator to declare multiple args deprecated.
 
-    @param arg_pairs: Each entry points to the new argument name. With True or
-        None it drops the value and prints a warning. If False it just drops
-        the value.
+    Usage:
+
+        @deprecated_args(foo='bar', baz=None)
+        def my_function(bar='baz'): pass
+        # replaces 'foo' keyword by 'bar' and ignores 'baz' keyword
+
+    @param arg_pairs: Each entry points to the new argument name. If an
+        argument is to be removed, the value may be one of the following:
+        - None: shows a DeprecationWarning
+        - False: shows a PendingDeprecationWarning
+        - True: shows a FutureWarning (only once)
+        - empty string: no warning is printed
     """
     def decorator(obj):
         """Outer wrapper.
@@ -1479,9 +1403,7 @@ def deprecated_args(**arg_pairs):
             """Replacement function.
 
             @param __args: args passed to the decorated function
-            @type __args: list
-            @param __kwargs: kwargs passed to the decorated function
-            @type __kwargs: dict
+            @param __kw: kwargs passed to the decorated function
             @return: the value returned by the decorated function
             @rtype: any
             """
@@ -1493,30 +1415,37 @@ def deprecated_args(**arg_pairs):
                     'old_arg': old_arg,
                     'new_arg': new_arg,
                 }
-                if old_arg in __kw:
-                    if new_arg not in [True, False, None]:
-                        if new_arg in __kw:
-                            warn(u"%(new_arg)s argument of %(name)s "
-                                 u"replaces %(old_arg)s; cannot use both."
-                                 % output_args,
-                                 RuntimeWarning, depth)
-                        else:
-                            # If the value is positionally given this will
-                            # cause a TypeError, which is intentional
-                            warn(u"%(old_arg)s argument of %(name)s "
-                                 u"is deprecated; use %(new_arg)s instead."
-                                 % output_args,
-                                 DeprecationWarning, depth)
-                            __kw[new_arg] = __kw[old_arg]
+                if old_arg not in __kw:
+                    continue
+
+                if new_arg not in [True, False, None, '']:
+                    if new_arg in __kw:
+                        warn('{new_arg} argument of {name} '
+                             'replaces {old_arg}; cannot use both.'
+                             .format(**output_args),
+                             RuntimeWarning, depth)
                     else:
-                        if new_arg is False:
-                            cls = PendingDeprecationWarning
-                        else:
-                            cls = DeprecationWarning
-                        warn(u"%(old_arg)s argument of %(name)s is deprecated."
-                             % output_args,
-                             cls, depth)
-                    del __kw[old_arg]
+                        # If the value is positionally given this will
+                        # cause a TypeError, which is intentional
+                        warn('{old_arg} argument of {name} '
+                             'is deprecated; use {new_arg} instead.'
+                             .format(**output_args),
+                             DeprecationWarning, depth)
+                        __kw[new_arg] = __kw[old_arg]
+                elif new_arg == '':
+                    pass
+                else:
+                    if new_arg is False:
+                        cls = PendingDeprecationWarning
+                    elif new_arg is True:
+                        cls = FutureWarning
+                    else:  # new_arg is None
+                        cls = DeprecationWarning
+                    warn('{old_arg} argument of {name} is deprecated.'
+                         .format(**output_args),
+                         cls, depth)
+                del __kw[old_arg]
+
             return obj(*__args, **__kw)
 
         if not __debug__:
@@ -1526,16 +1455,17 @@ def deprecated_args(**arg_pairs):
 
         if wrapper.__signature__:
             # Build a new signature with deprecated args added.
-            # __signature__ is only available in Python 3 which has OrderedDict
-            params = OrderedDict()
+            params = collections.OrderedDict()
             for param in wrapper.__signature__.parameters.values():
                 params[param.name] = param.replace()
             for old_arg, new_arg in arg_pairs.items():
                 params[old_arg] = inspect.Parameter(
                     old_arg, kind=inspect._POSITIONAL_OR_KEYWORD,
-                    default='[deprecated name of ' + new_arg + ']'
-                    if new_arg not in [True, False, None]
+                    default='[deprecated name of {}]'.format(new_arg)
+                    if new_arg not in [True, False, None, '']
                     else NotImplemented)
+            params = collections.OrderedDict(sorted(params.items(),
+                                                    key=lambda x: x[1].kind))
             wrapper.__signature__ = inspect.Signature()
             wrapper.__signature__._parameters = params
 
@@ -1572,15 +1502,13 @@ def remove_last_args(arg_names):
             """Replacement function.
 
             @param __args: args passed to the decorated function
-            @type __args: list
-            @param __kwargs: kwargs passed to the decorated function
-            @type __kwargs: dict
+            @param __kw: kwargs passed to the decorated function
             @return: the value returned by the decorated function
             @rtype: any
             """
             name = obj.__full_name__
             depth = get_wrapper_depth(wrapper) + 1
-            args, varargs, kwargs, _ = getargspec(wrapper.__wrapped__)
+            args, varargs, kwargs, *_ = getfullargspec(wrapper.__wrapped__)
             if varargs is not None and kwargs is not None:
                 raise ValueError('{0} may not have * or ** args.'.format(
                     name))
@@ -1588,15 +1516,16 @@ def remove_last_args(arg_names):
             if len(__args) > len(args):
                 deprecated.update(arg_names[:len(__args) - len(args)])
             # remove at most |arg_names| entries from the back
-            new_args = tuple(__args[:max(len(args), len(__args) - len(arg_names))])
-            new_kwargs = dict((arg, val) for arg, val in __kw.items()
-                              if arg not in arg_names)
+            new_args = tuple(__args[:max(len(args),
+                                         len(__args) - len(arg_names))])
+            new_kwargs = {arg: val for arg, val in __kw.items()
+                          if arg not in arg_names}
 
             if deprecated:
                 # sort them according to arg_names
                 deprecated = [arg for arg in arg_names if arg in deprecated]
-                warn(u"The trailing arguments ('{0}') of {1} are deprecated. "
-                     u"The value(s) provided for '{2}' have been dropped.".
+                warn("The trailing arguments ('{0}') of {1} are deprecated. "
+                     "The value(s) provided for '{2}' have been dropped.".
                      format("', '".join(arg_names),
                             name,
                             "', '".join(deprecated)),
@@ -1610,7 +1539,8 @@ def remove_last_args(arg_names):
 
 
 def redirect_func(target, source_module=None, target_module=None,
-                  old_name=None, class_name=None):
+                  old_name=None, class_name=None, since=None,
+                  future_warning=False):
     """
     Return a function which can be used to redirect to 'target'.
 
@@ -1633,17 +1563,25 @@ def redirect_func(target, source_module=None, target_module=None,
     @param class_name: The name of the class. It's added to the target and
         source module (separated by a '.').
     @type class_name: basestring
+    @param since: a timestamp string of the date when the method was
+        deprecated (form 'YYYYMMDD') or a version string.
+    @type since: str
+    @param future_warning: if True a FutureWarning will be thrown,
+        otherwise it defaults to DeprecationWarning
+    @type future_warning: bool
     @return: A new function which adds a warning prior to each execution.
     @rtype: callable
     """
     def call(*a, **kw):
-        issue_deprecation_warning(old_name, new_name, 2)
+        issue_deprecation_warning(
+            old_name, new_name, since=since,
+            warning_class=FutureWarning if future_warning else None)
         return target(*a, **kw)
     if target_module is None:
         target_module = target.__module__
     if target_module and target_module[-1] != '.':
         target_module += '.'
-    if source_module is '.':
+    if source_module == '.':
         source_module = target_module
     elif source_module and source_module[-1] != '.':
         source_module += '.'
@@ -1675,17 +1613,18 @@ class ModuleDeprecationWrapper(types.ModuleType):
         @param module: The module name or instance
         @type module: str or module
         """
-        if isinstance(module, basestring):
+        if isinstance(module, (str, bytes)):
             module = sys.modules[module]
-        super(ModuleDeprecationWrapper, self).__setattr__('_deprecated', {})
-        super(ModuleDeprecationWrapper, self).__setattr__('_module', module)
+        super().__setattr__('_deprecated', {})
+        super().__setattr__('_module', module)
         self.__dict__.update(module.__dict__)
 
         if __debug__:
             sys.modules[module.__name__] = self
 
     def _add_deprecated_attr(self, name, replacement=None,
-                             replacement_name=None, warning_message=None):
+                             replacement_name=None, warning_message=None,
+                             since=None, future_warning=False):
         """
         Add the name to the local deprecated names dict.
 
@@ -1704,6 +1643,12 @@ class ModuleDeprecationWrapper(types.ModuleType):
         @param warning_message: The warning to display, with positional
             variables: {0} = module, {1} = attribute name, {2} = replacement.
         @type warning_message: basestring
+        @param since: a timestamp string of the date when the method was
+            deprecated (form 'YYYYMMDD') or a version string.
+        @type since: str
+        @param future_warning: if True a FutureWarning will be thrown,
+            otherwise it defaults to DeprecationWarning
+        @type future_warning: bool
         """
         if '.' in name:
             raise ValueError('Deprecated name "{0}" may not contain '
@@ -1727,15 +1672,13 @@ class ModuleDeprecationWrapper(types.ModuleType):
                                 'specifically.')
 
         if not warning_message:
-            if replacement_name:
-                warning_message = '{0}.{1} is deprecated; use {2} instead.'
-            else:
-                warning_message = u"{0}.{1} is deprecated."
-
+            warning_message = _build_msg_string(
+                replacement_name, since).format('{0}.{1}', '{2}')
         if hasattr(self, name):
             # __getattr__ will only be invoked if self.<name> does not exist.
             delattr(self, name)
-        self._deprecated[name] = replacement_name, replacement, warning_message
+        self._deprecated[name] = (
+            replacement_name, replacement, warning_message, future_warning)
 
     def __setattr__(self, attr, value):
         """Set the value of the wrapped module."""
@@ -1745,50 +1688,51 @@ class ModuleDeprecationWrapper(types.ModuleType):
     def __getattr__(self, attr):
         """Return the attribute with a deprecation warning if required."""
         if attr in self._deprecated:
-            warning_message = self._deprecated[attr][2]
-            warn(warning_message.format(self._module.__name__, attr,
-                                        self._deprecated[attr][0]),
-                 DeprecationWarning, 2)
-            if self._deprecated[attr][1]:
-                return self._deprecated[attr][1]
-            elif '.' in self._deprecated[attr][0]:
+            name, repl, message, future = self._deprecated[attr]
+            warning_message = message
+            warn(warning_message.format(self._module.__name__, attr, name),
+                 FutureWarning if future else DeprecationWarning, 2)
+            if repl:
+                return repl
+            elif '.' in name:
                 try:
-                    package_name = self._deprecated[attr][0].split('.', 1)[0]
-                    module = __import__(package_name)
+                    package_name = name.split('.', 1)[0]
+                    module = import_module(package_name)
                     context = {package_name: module}
-                    replacement = eval(self._deprecated[attr][0], context)
+                    replacement = eval(name, context)
                     self._deprecated[attr] = (
-                        self._deprecated[attr][0],
-                        replacement,
-                        self._deprecated[attr][2]
-                    )
+                        name, replacement, message, future)
                     return replacement
                 except Exception:
                     pass
         return getattr(self._module, attr)
 
 
-@deprecated('open_archive()')
-def open_compressed(filename, use_extension=False):
-    """DEPRECATED: Open a file and uncompress it if needed."""
-    return open_archive(filename, use_extension=use_extension)
-
-
-def file_mode_checker(filename, mode=0o600):
+def file_mode_checker(filename, mode=0o600, quiet=False, create=False):
     """Check file mode and update it, if needed.
 
     @param filename: filename path
     @type filename: basestring
     @param mode: requested file mode
     @type mode: int
-
+    @param quiet: warn about file mode change if False.
+    @type quiet: bool
+    @param create: create the file if it does not exist already
+    @type create: bool
+    @raise IOError: The file does not exist and `create` is False.
     """
+    try:
+        st_mode = os.stat(filename).st_mode
+    except OSError:  # file does not exist
+        if not create:
+            raise
+        os.close(os.open(filename, os.O_CREAT | os.O_EXCL, mode))
+        return
     warn_str = 'File {0} had {1:o} mode; converted to {2:o} mode.'
-    st_mode = os.stat(filename).st_mode
     if stat.S_ISREG(st_mode) and (st_mode - stat.S_IFREG != mode):
         os.chmod(filename, mode)
         # re-read and check changes
-        if os.stat(filename).st_mode != st_mode:
+        if os.stat(filename).st_mode != st_mode and not quiet:
             warn(warn_str.format(filename, st_mode - stat.S_IFREG, mode))
 
 
@@ -1828,3 +1772,73 @@ def compute_file_hash(filename, sha='sha1', bytes_to_read=None):
             bytes_to_read -= len(read_bytes)
             sha.update(read_bytes)
     return sha.hexdigest()
+
+# deprecated parts ############################################################
+
+
+@deprecated('open_archive()', since='20150915', future_warning=True)
+def open_compressed(filename, use_extension=False):
+    """DEPRECATED: Open a file and uncompress it if needed."""
+    return open_archive(filename, use_extension=use_extension)
+
+
+class IteratorNextMixin(Iterator):
+
+    """DEPRECATED. Backwards compatibility for Iterators."""
+
+    pass
+
+
+class _UnicodeMixin:
+
+    """DEPRECATED. Mixin class to add __str__ method in Python 2 or 3."""
+
+    def __str__(self):
+        """Return the unicode representation as the str representation."""
+        return self.__unicode__()
+
+
+@deprecated('bot_choice.Option and its subclasses', since='20181217')
+def concat_options(message, line_length, options):
+    """DEPRECATED. Concatenate options."""
+    indent = len(message) + 2
+    line_length -= indent
+    option_msg = ''
+    option_line = ''
+    for option in options:
+        if option_line:
+            option_line += ', '
+        # +1 for ','
+        if len(option_line) + len(option) + 1 > line_length:
+            if option_msg:
+                option_msg += '\n' + ' ' * indent
+            option_msg += option_line[:-1]  # remove space
+            option_line = ''
+        option_line += option
+    if option_line:
+        if option_msg:
+            option_msg += '\n' + ' ' * indent
+        option_msg += option_line
+    return '{0} ({1}):'.format(message, option_msg)
+
+
+@deprecated(since='20200723', future_warning=True)
+def py2_encode_utf_8(func):
+    """Decorator to optionally encode the string result of func on Python 2."""
+    return func
+
+
+wrapper = ModuleDeprecationWrapper(__name__)
+wrapper._add_deprecated_attr('UnicodeMixin', _UnicodeMixin,
+                             replacement_name='',
+                             since='20200723', future_warning=True)
+wrapper._add_deprecated_attr('IteratorNextMixin', replacement_name='',
+                             since='20200723', future_warning=True)
+wrapper._add_deprecated_attr('getargspec', inspect.getargspec,
+                             since='20200712', future_warning=True)
+wrapper._add_deprecated_attr('ArgSpec', inspect.ArgSpec,
+                             since='20200712', future_warning=True)
+wrapper._add_deprecated_attr('UnicodeType', str,
+                             since='20200813', future_warning=True)
+wrapper._add_deprecated_attr('signature', inspect.signature,
+                             since='20200813', future_warning=True)

@@ -3,21 +3,18 @@
 """
 Correct all redirect links in featured pages or only one page of each wiki.
 
-Can be using with:
-&params;
+Can be used with:
 
 -featured         Run over featured pages (for some wikimedia wikis only)
 
-Run fixing_redirects.py -help to see all the command-line
-options -file, -ref, -links, ...
-
+&params;
 """
 #
-# (C) Pywikibot team, 2004-2017
+# (C) Pywikibot team, 2004-2019
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import re
 
@@ -25,15 +22,14 @@ import pywikibot
 from pywikibot import pagegenerators
 from pywikibot.bot import (SingleSiteBot, ExistingPageBot, NoRedirectPageBot,
                            AutomaticTWSummaryBot, suggest_help)
-from pywikibot.textlib import does_text_contain_section
+from pywikibot.exceptions import InvalidTitle
+from pywikibot.textlib import does_text_contain_section, isDisabled
 from pywikibot.tools.formatter import color_format
 from pywikibot.tools import first_lower, first_upper as firstcap
 
 # This is required for the text that is shown when you run this script
 # with the parameter -help.
-docuReplacements = {
-    '&params;': pagegenerators.parameterHelp,
-}
+docuReplacements = {'&params;': pagegenerators.parameterHelp}  # noqa: N816
 
 # Featured articles categories
 featured_articles = 'Q4387444'
@@ -54,8 +50,9 @@ class FixingRedirectBot(SingleSiteBot, ExistingPageBot, NoRedirectPageBot,
         linktrail = mysite.linktrail()
 
         # make a backup of the original text so we can show the changes later
-        linkR = re.compile(r'\[\[(?P<title>[^\]\|#]*)(?P<section>#[^\]\|]*)?'
-                           r'(\|(?P<label>[^\]]*))?\]\](?P<linktrail>' + linktrail + ')')
+        linkR = re.compile(
+            r'\[\[(?P<title>[^\]\|#]*)(?P<section>#[^\]\|]*)?'
+            r'(\|(?P<label>[^\]]*))?\]\](?P<linktrail>' + linktrail + ')')
         curpos = 0
         # This loop will run until we have finished the current page
         while True:
@@ -64,13 +61,21 @@ class FixingRedirectBot(SingleSiteBot, ExistingPageBot, NoRedirectPageBot,
                 break
             # Make sure that next time around we will not find this same hit.
             curpos = m.start() + 1
-            # ignore interwiki links and links to sections of the same page
-            if m.group('title').strip() == '' or \
-               mysite.isInterwikiLink(m.group('title')):
+            # ignore interwiki links, links in the disabled area
+            # and links to sections of the same page
+            if (m.group('title').strip() == ''
+                    or mysite.isInterwikiLink(m.group('title'))
+                    or isDisabled(text, m.start())):
                 continue
             else:
-                actualLinkPage = pywikibot.Page(targetPage.site, m.group('title'))
+                actualLinkPage = pywikibot.Page(
+                    targetPage.site, m.group('title'))
                 # Check whether the link found is to page.
+                try:
+                    actualLinkPage.title()
+                except InvalidTitle:
+                    pywikibot.exception()
+                    continue
                 if actualLinkPage != linkedPage:
                     continue
 
@@ -108,19 +113,20 @@ class FixingRedirectBot(SingleSiteBot, ExistingPageBot, NoRedirectPageBot,
                 new_page_title = new_page_title[1:]
 
             if (new_page_title == link_text and not section):
-                newlink = "[[%s]]" % new_page_title
-            # check if we can create a link with trailing characters instead of a
-            # pipelink
-            elif (len(new_page_title) <= len(link_text) and
-                  firstcap(link_text[:len(new_page_title)]) ==
-                  firstcap(new_page_title) and
-                  re.sub(re.compile(linktrail), '',
-                         link_text[len(new_page_title):]) == '' and
-                  not section):
-                newlink = "[[%s]]%s" % (link_text[:len(new_page_title)],
-                                        link_text[len(new_page_title):])
+                newlink = '[[{}]]'.format(new_page_title)
+            # check if we can create a link with trailing characters instead of
+            # a pipelink
+            elif (len(new_page_title) <= len(link_text)
+                  and (firstcap(link_text[:len(new_page_title)])
+                       == firstcap(new_page_title))
+                  and re.sub(re.compile(linktrail), '',
+                             link_text[len(new_page_title):]) == ''
+                  and not section):
+                newlink = '[[{}]]{}'.format(link_text[:len(new_page_title)],
+                                            link_text[len(new_page_title):])
             else:
-                newlink = "[[%s%s|%s]]" % (new_page_title, section, link_text)
+                newlink = '[[{}{}|{}]]'.format(new_page_title,
+                                               section, link_text)
             text = text[:m.start()] + newlink + text[m.end():]
             continue
         return text
@@ -150,8 +156,8 @@ class FixingRedirectBot(SingleSiteBot, ExistingPageBot, NoRedirectPageBot,
                                                                  section):
                         pywikibot.warning(
                             'Section #{0} not found on page {1}'.format(
-                                section, target.title(asLink=True,
-                                                      withSection=False)))
+                                section, target.title(as_link=True,
+                                                      with_section=False)))
                         continue
             else:
                 continue
@@ -173,7 +179,7 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     featured = False
     gen = None
@@ -211,11 +217,9 @@ def main(*args):
     if gen:
         bot = FixingRedirectBot(generator=gen)
         bot.run()
-        return True
     else:
         suggest_help(missing_generator=True)
-        return False
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

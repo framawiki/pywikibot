@@ -1,47 +1,120 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-"""
-A generic bot to do data ingestion (batch uploading).
+r"""
+A generic bot to do data ingestion (batch uploading) of photos or other files.
 
-usage:
+In addition it installs related metadata. The uploading is primarily from a url
+to a wiki-site.
 
-    python pwb.py data_ingestion -csvdir:local_dir/ -page:config_page
+Required configuration files
+============================
+    - a 'Data ingestion' template on a wiki site that specifies the name of a
+      csv file, and csv configuration values.
+    - a csv file that specifies each file to upload, the file's copy-from URL
+      location, and some metadata.
+
+Required parameters
+===================
+The following parameters are required. The 'csvdir' and the 'page:csvFile' will
+be joined creating a path to a csv file that should contain specified
+information about files to upload.
+
+-csvdir           A directory path to csv files
+
+-page             A wiki path to templates. One of the templates at this
+                  location must be a 'Data ingestion' template with the
+                  following parameters.
+
+                      Required parameters
+                          csvFile
+
+                      Optional parameters
+                          sourceFormat
+                              options: 'csv'
+
+                          sourceFileKey
+                              options: 'StockNumber'
+
+                          csvDialect
+                              options: 'excel', ''
+
+                          csvDelimiter
+                              options: any delimiter, ',' is most common
+
+                          csvEncoding
+                              options: 'utf8', 'Windows-1252'
+
+                          formattingTemplate
+
+                          titleFormat
+
+
+Example 'Data ingestion' template
+=================================
+.. code::
+
+    {{Data ingestion
+    |sourceFormat=csv
+    |csvFile=csv_ingestion.csv
+    |sourceFileKey=%(StockNumber)
+    |csvDialect=
+    |csvDelimiter=,
+    |csvEncoding=utf8
+    |formattingTemplate=Template:Data ingestion test configuration
+    |titleFormat=%(name)s - %(set)s.%(_ext)s
+    }}
+
+
+Csv file
+========
+A full example can be found at tests/data/csv_ingestion.csv
+The 'url' field is the location a file will be copied from.
+
+csv field Headers::
+
+    description.en,source,author,license,set,name,url
+
+
+Usage
+=====
+.. code::
+
+    python pwb.py data_ingestion -csvdir:<local_dir/> -page:<cfg_page_on_wiki>
+
+
+Example
+=======
+Warning! Put it in one line, otherwise it won't work correctly.
+
+.. code::
+
+    python pwb.py data_ingestion \
+        -csvdir:"test/data" \
+        -page:"User:<Your-Username>/data_ingestion_test_template"
+
 """
 #
-# (C) Pywikibot team, 2013-2017
+# (C) Pywikibot team, 2012-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 import base64
 import codecs
+import csv
 import hashlib
 import io
 import os
-import sys
-
 import posixpath
 
-if sys.version_info[0] > 2:
-    import csv
-else:
-    import unicodecsv as csv
-
+from urllib.parse import urlparse
 from warnings import warn
 
 import pywikibot
 
-from pywikibot import pagegenerators
-
 from pywikibot.comms.http import fetch
+from pywikibot import pagegenerators
 from pywikibot.specialbots import UploadRobot
 from pywikibot.tools import deprecated, deprecated_args
-
-if sys.version_info[0] > 2:
-    from urllib.parse import urlparse
-else:
-    from urlparse import urlparse
 
 
 class Photo(pywikibot.FilePage):
@@ -50,7 +123,7 @@ class Photo(pywikibot.FilePage):
 
     def __init__(self, URL, metadata, site=None):
         """
-        Constructor.
+        Initializer.
 
         @param URL: URL of photo
         @type URL: str
@@ -58,25 +131,24 @@ class Photo(pywikibot.FilePage):
             from the title & template
         @type metadata: dict
         @param site: target site
-        @type site: APISite
+        @type site: pywikibot.site.APISite
 
         """
         self.URL = URL
         self.metadata = metadata
-        self.metadata["_url"] = URL
-        self.metadata["_filename"] = filename = posixpath.split(
+        self.metadata['_url'] = URL
+        self.metadata['_filename'] = filename = posixpath.split(
             urlparse(URL)[2])[1]
-        self.metadata["_ext"] = ext = filename.split(".")[-1]
+        self.metadata['_ext'] = ext = filename.split('.')[-1]
         if ext == filename:
-            self.metadata["_ext"] = ext = None
+            self.metadata['_ext'] = None
         self.contents = None
 
         if not site:
             site = pywikibot.Site('commons', 'commons')
 
         # default title
-        super(Photo, self).__init__(site,
-                                    self.getTitle('%(_filename)s.%(_ext)s'))
+        super().__init__(site, self.getTitle('%(_filename)s.%(_ext)s'))
 
     def downloadPhoto(self):
         """
@@ -101,8 +173,9 @@ class Photo(pywikibot.FilePage):
         """
         hashObject = hashlib.sha1()
         hashObject.update(self.downloadPhoto().getvalue())
-        return [page.title(withNamespace=False) for page in
-                self.site.allimages(sha1=base64.b16encode(hashObject.digest()))]
+        return [page.title(with_ns=False) for page in
+                self.site.allimages(
+                    sha1=base64.b16encode(hashObject.digest()))]
 
     def getTitle(self, fmt):
         """
@@ -112,9 +185,9 @@ class Photo(pywikibot.FilePage):
         a MediaWiki page title, and cause an API exception when used.
 
         @param fmt: format string
-        @type fmt: unicode
+        @type fmt: str
         @return: formatted string
-        @rtype: unicode
+        @rtype: str
         """
         # FIXME: normalise the title so it is usable as a MediaWiki title.
         return fmt % self.metadata
@@ -124,19 +197,19 @@ class Photo(pywikibot.FilePage):
         params = {}
         params.update(self.metadata)
         params.update(extraparams)
-        description = u'{{%s\n' % template
+        description = '{{%s\n' % template
         for key in sorted(params.keys()):
             value = params[key]
-            if not key.startswith("_"):
-                description = description + (
-                    u'|%s=%s' % (key, self._safeTemplateValue(value))) + "\n"
-        description = description + u'}}'
+            if not key.startswith('_'):
+                description += ('|{}={}\n'.format(
+                    key, self._safeTemplateValue(value)))
+        description += '}}'
 
         return description
 
     def _safeTemplateValue(self, value):
         """Replace pipe (|) with {{!}}."""
-        return value.replace("|", "{{!}}")
+        return value.replace('|', '{{!}}')
 
 
 def CSVReader(fileobj, urlcolumn, site=None, *args, **kwargs):
@@ -153,7 +226,7 @@ class DataIngestionBot(pywikibot.Bot):
     def __init__(self, reader, titlefmt, pagefmt,
                  site='deprecated_default_commons'):
         """
-        Constructor.
+        Initializer.
 
         @param reader: Generator of Photos to process.
         @type reader: Photo page generator
@@ -165,35 +238,42 @@ class DataIngestionBot(pywikibot.Bot):
             Use None to determine the site from the pages treated.
             Defaults to 'deprecated_default_commons' to use Wikimedia Commons
             for backwards compatibility reasons. Deprecated.
-        @type site: APISite, 'deprecated_default_commons' or None
+        @type site: pywikibot.site.APISite, 'deprecated_default_commons' or
+            None
         """
         if site == 'deprecated_default_commons':
-            warn('site=\'deprecated_default_commons\' is deprecated; '
+            warn("site='deprecated_default_commons' is deprecated; "
                  'please specify a site or use site=None',
                  DeprecationWarning, 2)
             site = pywikibot.Site('commons', 'commons')
-        super(DataIngestionBot, self).__init__(generator=reader, site=site)
+        super().__init__(generator=reader, site=site)
 
         self.titlefmt = titlefmt
         self.pagefmt = pagefmt
 
     @property
-    @deprecated('generator')
+    @deprecated('generator', since='20150508', future_warning=True)
     def reader(self):
-        """Get generator. Deprecated."""
+        """Deprecated generator."""
         return self.generator
 
     @reader.setter
-    @deprecated('generator')
+    @deprecated('generator', since='20150508', future_warning=True)
     def reader(self, value):
-        """Set generator. Deprecated."""
         self.generator = value
 
     def treat(self, photo):
-        """Process each page."""
+        """
+        Process each page.
+
+        1. Check for existing duplicates on the wiki specified in self.site.
+        2. If duplicates are found, then skip uploading.
+        3. Download the file from photo.URL and upload the file to self.site.
+        """
         duplicates = photo.findDuplicateImages()
         if duplicates:
-            pywikibot.output(u"Skipping duplicate of %r" % duplicates)
+            pywikibot.output('Skipping duplicate of {!r}'
+                             .format(duplicates))
             return duplicates[0]
 
         title = photo.getTitle(self.titlefmt)
@@ -201,17 +281,17 @@ class DataIngestionBot(pywikibot.Bot):
 
         bot = UploadRobot(url=photo.URL,
                           description=description,
-                          useFilename=title,
-                          keepFilename=True,
-                          verifyDescription=False,
-                          targetSite=self.site)
+                          use_filename=title,
+                          keep_filename=True,
+                          verify_description=False,
+                          target_site=self.site)
         bot._contents = photo.downloadPhoto().getvalue()
         bot._retrieved = True
         bot.run()
 
         return title
 
-    @deprecated("treat()")
+    @deprecated('treat()', since='20150118', future_warning=True)
     def doSingle(self):
         """Process one page."""
         return self.treat(next(self.reader))
@@ -226,15 +306,15 @@ class DataIngestionBot(pywikibot.Bot):
         """
         configuration = {}
         # Set a bunch of defaults
-        configuration['csvDialect'] = u'excel'
+        configuration['csvDialect'] = 'excel'
         configuration['csvDelimiter'] = ';'
-        configuration['csvEncoding'] = u'Windows-1252'  # FIXME: Encoding hell
+        configuration['csvEncoding'] = 'Windows-1252'  # FIXME: Encoding hell
 
         templates = configurationPage.templatesWithParams()
         for (template, params) in templates:
-            if template.title(withNamespace=False) == u'Data ingestion':
+            if template.title(with_ns=False) == 'Data ingestion':
                 for param in params:
-                    (field, sep, value) = param.partition(u'=')
+                    (field, sep, value) = param.partition('=')
 
                     # Remove leading or trailing spaces
                     field = field.strip()
@@ -253,10 +333,14 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
     # Process global args and prepare generator args parser
     local_args = pywikibot.handle_args(args)
+
+    # This factory is responsible for processing command line arguments
+    # that are also used by other scripts and that determine on which pages
+    # to work on.
     genFactory = pagegenerators.GeneratorFactory()
     csv_dir = None
 
@@ -268,44 +352,38 @@ def main(*args):
 
     config_generator = genFactory.getCombinedGenerator()
 
-    if not config_generator or not csv_dir:
-        pywikibot.bot.suggest_help(
+    if pywikibot.bot.suggest_help(
             missing_parameters=[] if csv_dir else ['-csvdir'],
-            missing_generator=not config_generator)
-        return False
+            missing_generator=not config_generator):
+        return
 
     for config_page in config_generator:
         try:
             config_page.get()
         except pywikibot.NoPage:
-            pywikibot.error('%s does not exist' % config_page)
+            pywikibot.error('{} does not exist'.format(config_page))
             continue
 
         configuration = DataIngestionBot.parseConfigurationPage(config_page)
 
         filename = os.path.join(csv_dir, configuration['csvFile'])
         try:
-
             f = codecs.open(filename, 'r', configuration['csvEncoding'])
         except (IOError, OSError) as e:
-            pywikibot.error('%s could not be opened: %s' % (filename, e))
-            continue
+            pywikibot.error('{} could not be opened: {}'.format(filename, e))
+        else:
+            with f:
+                files = CSVReader(f, urlcolumn='url',
+                                  site=config_page.site,
+                                  dialect=configuration['csvDialect'],
+                                  delimiter=str(configuration['csvDelimiter']))
 
-        try:
-            files = CSVReader(f, urlcolumn='url',
-                              site=config_page.site,
-                              dialect=configuration['csvDialect'],
-                              delimiter=str(configuration['csvDelimiter']))
-
-            bot = DataIngestionBot(files,
-                                   configuration['titleFormat'],
-                                   configuration['formattingTemplate'],
-                                   site=None)
-
-            bot.run()
-        finally:
-            f.close()
+                bot = DataIngestionBot(files,
+                                       configuration['titleFormat'],
+                                       configuration['formattingTemplate'],
+                                       site=None)
+                bot.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

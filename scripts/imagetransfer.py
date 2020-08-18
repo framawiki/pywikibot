@@ -5,9 +5,9 @@ Script to copy images to Wikimedia Commons, or to another wiki.
 
 Syntax:
 
-    python pwb.py imagetransfer pagename [-interwiki] [-tolang:x] [-tofamily:y]
+    python pwb.py imagetransfer {<pagename>|<generator>} [<options>]
 
-Arguments:
+The following parameters are supported:
 
   -interwiki   Look for images in pages found through interwiki links.
 
@@ -24,14 +24,15 @@ If pagename is an image description page, offers to copy the image to the
 target site. If it is a normal page, it will offer to copy any of the images
 used on that page, or if the -interwiki argument is used, any of the images
 used on a page reachable via interwiki links.
+
+&params;
 """
 #
-# (C) Andre Engels, 2004
-# (C) Pywikibot team, 2004-2017
+# (C) Pywikibot team, 2004-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import re
 import sys
@@ -42,73 +43,78 @@ from pywikibot import config, i18n, pagegenerators, textlib
 from pywikibot.specialbots import UploadRobot
 
 
+docuReplacements = {
+    '&params;': pagegenerators.parameterHelp
+}
+
+
 nowCommonsTemplate = {
-    'ar': u'{{الآن كومنز|%s}}',
-    'de': u'{{NowCommons|%s}}',
-    'fr': u'{{Désormais sur Commons|%s}}',
-    'en': u'{{subst:ncd|Image:%s}}',
-    'fa': u'{{موجود در انبار|%s}}',
-    'he': u'{{גם בוויקישיתוף|%s}}',
-    'hu': u'{{azonnali-commons|Kép:%s}}',
-    'ia': u'{{OraInCommons|Imagine:%s}}',
-    'it': u'{{NowCommons unlink|%s}}',
-    'ja': u'{{NowCommons|Image:%s}}',
-    'kk': u'{{NowCommons|Image:%s}}',
-    'li': u'{{NowCommons|%s}}',
-    'lt': u'{{NowCommons|Image:%s}}',
-    'nds-nl': u'{{NoenCommons|File:%s}}',
-    'nl': u'{{NuCommons|Image:%s}}',
-    'pl': u'{{NowCommons|%s}}',
-    'pt': u'{{NowCommons|%s}}',
-    'sr': u'{{NowCommons|%s}}',
-    'zh': u'{{NowCommons|Image:%s}}',
+    'ar': '{{الآن كومنز|%s}}',
+    'de': '{{NowCommons|%s}}',
+    'fr': '{{Désormais sur Commons|%s}}',
+    'en': '{{subst:ncd|Image:%s}}',
+    'fa': '{{موجود در انبار|%s}}',
+    'he': '{{גם בוויקישיתוף|%s}}',
+    'hu': '{{azonnali-commons|Kép:%s}}',
+    'ia': '{{OraInCommons|Imagine:%s}}',
+    'it': '{{NowCommons unlink|%s}}',
+    'ja': '{{NowCommons|Image:%s}}',
+    'kk': '{{NowCommons|Image:%s}}',
+    'li': '{{NowCommons|%s}}',
+    'lt': '{{NowCommons|Image:%s}}',
+    'nds-nl': '{{NoenCommons|File:%s}}',
+    'nl': '{{NuCommons|Image:%s}}',
+    'pl': '{{NowCommons|%s}}',
+    'pt': '{{NowCommons|%s}}',
+    'sr': '{{NowCommons|%s}}',
+    'zh': '{{NowCommons|Image:%s}}',
 }
 
 # Translations for license templates.
 # Must only be given when they are in fact different.
 licenseTemplates = {
     ('wikipedia:de', 'commons:commons'): {
-        u'Bild-GFDL':                u'GFDL',
-        u'Bild-GFDL-OpenGeoDB':      u'GFDL-OpenGeoDB',
-        u'Bild-Innweb-Lizenz':       u'Map-Austria-GNU',
-        u'Bild-PD':                  u'PD',
-        u'Bild-PD-alt':              u'PD-old',
-        u'Bild-PD-Kunst':            u'PD-Art',
-        u'Bild-PD-US':               u'PD-USGov',
+        'Bild-GFDL': 'GFDL',
+        'Bild-GFDL-OpenGeoDB': 'GFDL-OpenGeoDB',
+        'Bild-Innweb-Lizenz': 'Map-Austria-GNU',
+        'Bild-PD': 'PD',
+        'Bild-PD-alt': 'PD-old',
+        'Bild-PD-Kunst': 'PD-Art',
+        'Bild-PD-US': 'PD-USGov',
     },
     ('wikipedia:fa', 'commons:commons'): {
-        u'مالکیت عمومی':             u'PD',
-        u'مالکیت عمومی-خود':         u'PD-self',
-        u'مجوز گنو':                  u'GFDL',
-        u'مجوز گنو-خود':             u'GFDL-self',
-        u'نگاره قدیمی':              u'PD-Iran',
-        u'نگاره نوشتاری':            u'PD-textlogo',
-        u'نگاره عراقی':              u'PD-Iraq',
-        u'نگاره بریتانیا':           u'PD-UK',
-        u'نگاره هابل':               u'PD-Hubble',
-        u'نگاره آمریکا':             u'PD-US',
-        u'نگاره دولت آمریکا':        u'PD-USGov',
-        u'کک-یاد-دو':                u'Cc-by-2.0',
-        u'کک-یاد-حفظ-دونیم':         u'Cc-by-sa-2.5',
-        u'کک-یاد-سه':                u'Cc-by-3.0',
+        'مالکیت عمومی': 'PD',
+        'مالکیت عمومی-خود': 'PD-self',
+        'مجوز گنو': 'GFDL',
+        'مجوز گنو-خود': 'GFDL-self',
+        'نگاره قدیمی': 'PD-Iran',
+        'نگاره نوشتاری': 'PD-textlogo',
+        'نگاره عراقی': 'PD-Iraq',
+        'نگاره بریتانیا': 'PD-UK',
+        'نگاره هابل': 'PD-Hubble',
+        'نگاره آمریکا': 'PD-US',
+        'نگاره دولت آمریکا': 'PD-USGov',
+        'کک-یاد-دو': 'Cc-by-2.0',
+        'کک-یاد-حفظ-دونیم': 'Cc-by-sa-2.5',
+        'کک-یاد-سه': 'Cc-by-3.0',
     },
     ('wikipedia:fr', 'commons:commons'): {
-        u'Domaine public':           u'PD'
+        'Domaine public': 'PD'
     },
     ('wikipedia:he', 'commons:commons'): {
-        u'שימוש חופשי':              u'PD-self',
-        u'שימוש חופשי מוגן':         u'Copyrighted free use',
-        u'שימוש חופשי מוגן בתנאי':   u'Copyrighted free use provided that',
-        u'תמונה ישנה':              u'PD-Israel',
-        u'ייחוס':                   u'Attribution',
-        u'לוגו ויקימדיה':           u'Copyright by Wikimedia',
+        'שימוש חופשי': 'PD-self',
+        'שימוש חופשי מוגן': 'Copyrighted free use',
+        'שימוש חופשי מוגן בתנאי': 'Copyrighted free use provided that',
+        'תמונה ישנה': 'PD-Israel',
+        'ייחוס': 'Attribution',
+        'לוגו ויקימדיה': 'Copyright by Wikimedia',
     },
     ('wikipedia:hu', 'commons:commons'): {
-        u'Közkincs':                 u'PD',
-        u'Közkincs-régi':            u'PD-old',
+        'Közkincs': 'PD',
+        'Közkincs-régi': 'PD-old',
     },
     ('wikipedia:pt', 'commons:commons'): {
-        u'Domínio público':          u'PD',
+        'Domínio público': 'PD',
     },
 }
 
@@ -119,7 +125,18 @@ class ImageTransferBot(object):
 
     def __init__(self, generator, targetSite=None, interwiki=False,
                  keep_name=False, ignore_warning=False):
-        """Constructor."""
+        """Initializer.
+
+        @param generator: the pages to work on
+        @type generator: iterable
+        @param targetSite: Site to send image to, default none
+        @type targetSite: pywikibot.site.APISite
+        @param interwiki: Look for images in interwiki links, default false
+        @type interwiki: boolean
+        @param keep_name: Keep the filename and do not verify description
+            while replacing, default false
+        @type keep_name: boolean
+        """
         self.generator = generator
         self.interwiki = interwiki
         self.targetSite = targetSite
@@ -134,8 +151,8 @@ class ImageTransferBot(object):
         """
         sourceSite = sourceImagePage.site
         url = sourceImagePage.fileUrl().encode('utf-8')
-        pywikibot.output(u"URL should be: %s" % url)
-        # localize the text that should be printed on the image description page
+        pywikibot.output('URL should be: ' + url)
+        # localize the text that should be printed on image description page
         try:
             description = sourceImagePage.get()
             # try to translate license templates
@@ -158,51 +175,48 @@ class ImageTransferBot(object):
             description += sourceImagePage.getFileVersionHistoryTable()
             # add interwiki link
             if sourceSite.family == self.targetSite.family:
-                description += u'\r\n\r\n{0}'.format(sourceImagePage)
+                description += '\n\n{0}'.format(sourceImagePage)
         except pywikibot.NoPage:
-            description = ''
             pywikibot.output(
                 'Image does not exist or description page is empty.')
         except pywikibot.IsRedirectPage:
-            description = ''
             pywikibot.output('Image description page is redirect.')
         else:
             bot = UploadRobot(url=url, description=description,
-                              targetSite=self.targetSite,
-                              urlEncoding=sourceSite.encoding(),
-                              keepFilename=self.keep_name,
-                              verifyDescription=not self.keep_name,
-                              ignoreWarning=self.ignore_warning)
+                              target_site=self.targetSite,
+                              url_encoding=sourceSite.encoding(),
+                              keep_filename=self.keep_name,
+                              verify_description=not self.keep_name,
+                              ignore_warning=self.ignore_warning)
             # try to upload
             targetFilename = bot.run()
-            if targetFilename and self.targetSite.family.name == 'commons' and \
-               self.targetSite.code == 'commons':
+            if targetFilename and self.targetSite.family.name == 'commons' \
+               and self.targetSite.code == 'commons':
                 # upload to Commons was successful
                 reason = i18n.twtranslate(sourceSite,
                                           'imagetransfer-nowcommons_notice')
                 # try to delete the original image if we have a sysop account
-                if sourceSite.family.name in config.sysopnames and \
-                   sourceSite.lang in config.sysopnames[sourceSite.family.name]:
+                if sourceSite.has_right('delete'):
                     if sourceImagePage.delete(reason):
                         return
-                if sourceSite.lang in nowCommonsTemplate and \
-                   sourceSite.family.name in config.usernames and \
-                   sourceSite.lang in config.usernames[sourceSite.family.name]:
+                if sourceSite.lang in nowCommonsTemplate \
+                   and sourceSite.family.name in config.usernames \
+                   and sourceSite.lang in \
+                   config.usernames[sourceSite.family.name]:
                     # add the nowCommons template.
-                    pywikibot.output(u'Adding nowCommons template to %s'
-                                     % sourceImagePage.title())
-                    sourceImagePage.put(sourceImagePage.get() + '\n\n' +
-                                        nowCommonsTemplate[sourceSite.lang]
+                    pywikibot.output('Adding nowCommons template to '
+                                     + sourceImagePage.title())
+                    sourceImagePage.put(sourceImagePage.get() + '\n\n'
+                                        + nowCommonsTemplate[sourceSite.lang]
                                         % targetFilename,
                                         summary=reason)
 
     def showImageList(self, imagelist):
         """Print image list."""
-        for i in range(len(imagelist)):
-            image = imagelist[i]
+        for i, image in enumerate(imagelist):
             pywikibot.output('-' * 60)
-            pywikibot.output(u"%s. Found image: %s"
-                             % (i, image.title(asLink=True)))
+            pywikibot.output('{}. Found image: {}'
+                             .format(i, image.title(as_link=True)))
             try:
                 # Show the image description page's contents
                 pywikibot.output(image.get())
@@ -212,12 +226,11 @@ class ImageTransferBot(object):
                 # to upload anyway, using another name.
                 try:
                     # Maybe the image is on the target site already
-                    targetTitle = '%s:%s' % (self.targetSite.namespaces.FILE,
-                                             image.title().split(':', 1)[1])
+                    targetTitle = 'File:' + image.title().split(':', 1)[1]
                     targetImage = pywikibot.Page(self.targetSite, targetTitle)
                     targetImage.get()
-                    pywikibot.output(u"Image with this name is already on %s."
-                                     % self.targetSite)
+                    pywikibot.output('Image with this name is already on {}.'
+                                     .format(self.targetSite))
                     pywikibot.output('-' * 60)
                     pywikibot.output(targetImage.get())
                     sys.exit()
@@ -226,7 +239,7 @@ class ImageTransferBot(object):
                     pass
                 except pywikibot.IsRedirectPage:
                     pywikibot.output(
-                        u"Description page on target wiki is redirect?!")
+                        'Description page on target wiki is redirect?!')
 
             except pywikibot.NoPage:
                 break
@@ -248,31 +261,31 @@ class ImageTransferBot(object):
             else:
                 imagelist = list(page.imagelinks(followRedirects=True))
 
-            while len(imagelist) > 0:
+            while imagelist:
                 self.showImageList(imagelist)
                 if len(imagelist) == 1:
                     # no need to query the user, only one possibility
                     todo = 0
                 else:
                     pywikibot.output(
-                        u"Give the number of the image to transfer.")
-                    todo = pywikibot.input(u"To end uploading, press enter:")
+                        'Give the number of the image to transfer.')
+                    todo = pywikibot.input('To end uploading, press enter:')
                     if not todo:
                         break
                     todo = int(todo)
-                if todo in range(len(imagelist)):
-                    if (imagelist[todo].fileIsShared() and
-                            imagelist[todo].site.image_repository() ==
-                            self.targetSite.image_repository()):
+                if 0 <= todo < len(imagelist):
+                    if (imagelist[todo].file_is_shared()
+                            and imagelist[todo].site.image_repository()
+                            == self.targetSite.image_repository()):
                         pywikibot.output(
-                            'The image is already shared on {0}.'.format(
-                                self.targetSite.image_repository()))
+                            'The image is already shared on {0}.'
+                            .format(self.targetSite.image_repository()))
                     else:
                         self.transferImage(imagelist[todo])
                     # remove the selected image from the list
                     imagelist = imagelist[:todo] + imagelist[todo + 1:]
                 else:
-                    pywikibot.output(u'No such image number.')
+                    pywikibot.output('No such image number.')
 
 
 def main(*args):
@@ -282,10 +295,8 @@ def main(*args):
     If args is an empty list, sys.argv is used.
 
     @param args: command line arguments
-    @type args: list of unicode
+    @type args: str
     """
-    gen = None
-
     interwiki = False
     keep_name = False
     targetLang = None
@@ -309,21 +320,21 @@ def main(*args):
 
     gen = generator_factory.getCombinedGenerator()
     if not gen:
-        pywikibot.bot.suggest_help(missing_parameters=['page'])
-        return False
+        pywikibot.bot.suggest_help(
+            missing_parameters=['page'],
+            additional_text='and no other generator was defined.')
+        return
 
+    site = pywikibot.Site()
     if not targetLang and not targetFamily:
-        targetSite = pywikibot.Site('commons', 'commons')
+        targetSite = site.image_repository()
     else:
-        if not targetLang:
-            targetLang = pywikibot.Site().language
-        if not targetFamily:
-            targetFamily = pywikibot.Site().family
-        targetSite = pywikibot.Site(targetLang, targetFamily)
+        targetSite = pywikibot.Site(targetLang or site.lang,
+                                    targetFamily or site.family)
     bot = ImageTransferBot(gen, interwiki=interwiki, targetSite=targetSite,
                            keep_name=keep_name)
     bot.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

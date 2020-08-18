@@ -3,12 +3,12 @@ Pywikibot tests
 ===============
 
 The Pywikibot tests are based on the `unittest framework
-<https://docs.python.org/2/library/unittest.html>`_,
+<https://docs.python.org/3/library/unittest.html>`_,
 and are compatible with `nose <https://nose.readthedocs.org/>`_.
 
 The tests package provides a function load_tests that supports the
 `load tests protocol
-<https://docs.python.org/2/library/unittest.html#load-tests-protocol>`_.
+<https://docs.python.org/3/library/unittest.html#load-tests-protocol>`_.
 The default ordering begins with tests of underlying components, then tests
 site and page semantics, and finishes with tests of the scripts and finally
 any tests which have not been inserted into the ordered list of tests.
@@ -28,10 +28,6 @@ setup.py
 
 ::
 
-    python setup.py test
-
-::
-
     python setup.py nosetests --tests tests
 
 ::
@@ -44,7 +40,7 @@ Module unittest
 
 ::
 
-    python -m unittest -v
+    python -m unittest discover -v -p "*_tests.py"
 
 nose
 ~~~~
@@ -70,7 +66,9 @@ tox
 Specific tests
 --------------
 
-Individual test components can be run using unittest, nosetests, or pwb
+Individual test components can be run using unittest, nosetests, or pwb.
+With -lang and -family options pwb can be used to specify a site.
+
 
 unittest
 ~~~~~~~~
@@ -86,7 +84,7 @@ nose
 ::
 
     nosetests -v tests.api_tests tests.site_tests
-    python -m unittest -v tests.api_tests:TestParamInfo.test_init
+    python -m nose -v tests.api_tests:TestParamInfo.test_init
 
 pytest
 ~~~~~~
@@ -101,16 +99,17 @@ pwb
 
 ::
 
-    python pwb.py tests/api_tests.py -v
-    python pwb.py tests/site_tests.py -v
-    python pwb.py tests/api_tests.py -v TestParamInfo.test_init
+    python pwb.py tests/api_tests -v
+    python pwb.py tests/site_tests -v
+    python pwb.py tests/api_tests -v TestParamInfo.test_init
+    python pwb.py -lang:de -family:wikipedia tests/page_tests -v TestPageObject
 
 env
 ~~~
 
 ::
 
-    PYWIKIBOT_TEST_MODULES=api,site python setup.py test
+    PYWIKIBOT_TEST_MODULES=api,site python -m unittest -v
 
 
 Travis CI
@@ -120,29 +119,29 @@ After changes are published into a github repository, tests may be run on
 travis-ci.org according to the configuration in .travis.yml .
 
 When changes are merged into the main repository, they are replicated to
-https://github.com/wikimedia/pywikibot-core , and travis tests are run and
-published at travis-ci.org/wikimedia/pywikibot-core/builds .  These tests
+https://github.com/wikimedia/pywikibot , and travis tests are run and
+published at https://travis-ci.org/wikimedia/pywikibot/builds .  These tests
 use the Wikimedia global (SUL) account 'Pywikibot-test', which has a password
-securely stored in .travis.yml . See section env:global:secure.
+securely stored in .travis.yml file. See section env:global:secure.
 
 Anyone can run these tests on travis-ci.org using their own github account, with
-code changes that have not been merged into the main repository.  To do this:
+code changes that have not been merged into the main repository. To do this:
 
 1. create a github and travis-ci account
-2. fork the main github repository https://github.com/wikimedia/pywikibot-core
+2. fork the main github repository https://github.com/wikimedia/pywikibot
 3. enable builds from the travis profile page: https://travis-ci.org/profile
 4. push changes into the forked git repository
-5. watch the build at https://travis-ci.org/<username>/pywikibot-core/builds
+5. watch the build at https://travis-ci.org/<username>/pywikibot/builds
 
 Only travis-ci builds from the main repository can access the password for the
-Wikimedia account 'Pywikibot-test'.  All tests which require a logged in user
+Wikimedia account 'Pywikibot-test'. All tests which require a logged in user
 are skipped if the travis-ci build environment does not have a password.
 
 To enable 'user' tests on travis-ci builds for a different repository, add
 a username and password to travis:
 
-1. Go to https://travis-ci.org/<username>/pywikibot-core/settings/env_vars
-2. Add a new variable named PYWIKIBOT2_USERNAME and a value of a valid
+1. Go to https://travis-ci.org/<username>/pywikibot/settings
+2. Add a new variable named PYWIKIBOT_USERNAME and a value of a valid
    Wikimedia SUL username
 3. Add another variable named USER_PASSWORD, with the private password for
    the Wikimedia SUL username used in step 2.  Check that this
@@ -166,15 +165,15 @@ Appveyor CI
 
 After changes are published into a github repository, tests may be run on
 a Microsoft Windows box provided by ci.appveyor.com according to the
-configuration in .appveyor.yml .  To do this:
+configuration in .appveyor.yml file. To do this:
 
 1. create a github and appveyor account
 2. fork the main github repository
 3. create a project in ci.appveyor.com
-4. go to https://ci.appveyor.com/project/<username>/pywikibot-core/settings
+4. go to https://ci.appveyor.com/project/<username>/pywikibot/settings
    and enter the custom configuration .yml filename: .appveyor.yml
 5. push changes into the forked git repository
-6. watch the build at https://ci.appveyor.com/<username>/pywikibot-core/history
+6. watch the build at https://ci.appveyor.com/<username>/pywikibot/history
 
 The 'user' tests are not yet enabled on appveyor builds.
 
@@ -187,14 +186,16 @@ CircleCI Ubuntu servers.
 1. create a github and circleci account
 2. fork the main github repository
 3. create a project in circleci.com
-4. go to https://circleci.com/gh/<username>/pywikibot-core/edit#env-vars
+4. go to https://circleci.com/gh/<username>/pywikibot/edit#env-vars
    and add the following variables:
-     PYWIKIBOT2_NO_USER_CONFIG=2
-     TOXENV=py27,py34
-5. push changes into the forked git repository
-6. watch the build at https://circleci.com/gh/<username>/pywikibot-core
 
-PYWIKIBOT2_NO_USER_CONFIG=2 is needed because 'python setup.py test' is run.
+     - PYWIKIBOT_NO_USER_CONFIG=2
+     - TOXENV=py27,py34
+
+5. push changes into the forked git repository
+6. watch the build at https://circleci.com/gh/<username>/pywikibot
+
+PYWIKIBOT_NO_USER_CONFIG=2 is needed because 'python -m unittest' is run.
 
 TOXENV=py27,py34 is a workaround because CircleCI runs 'tox',
 but there is a bug in the CircleCI default 'py26' implementation.
@@ -205,13 +206,13 @@ Environment variables
 =====================
 
 There are a set of 'edit failure' tests, which attempt to write to the wikis
-and **should** fail.  If there is a bug in pywikibot or MediaWiki, these
+and **should** fail. If there is a bug in pywikibot or MediaWiki, these
 tests **may** actually perform a write operation.
 
 These 'edit failure' tests are disabled by default. On Travis they are enabled
 by default on builds by any other github account except 'wikimedia'.
 
-To disable 'edit failure' tests, set PYWIKIBOT2_TEST_WRITE_FAIL=0
+To disable 'edit failure' tests, set PYWIKIBOT_TEST_WRITE_FAIL=0
 
 There are also several other 'write' tests which also attempt to perform
 write operations successfully.  These **will** write to the wikis, and they
@@ -221,14 +222,10 @@ These 'write' tests are disabled by default, and currently can not be
 run on travis or appveyor as they require interaction using a terminal. Also
 enabling them won't enable 'edit failure' tests.
 
-To enable 'write' tests, set PYWIKIBOT2_TEST_WRITE=1
+To enable 'write' tests, set PYWIKIBOT_TEST_WRITE=1
 
 Enabling only 'edit failure' tests or 'write' tests won't enable the other tests
 automatically.
-
-Some tests are also using VCR.py, which means that these tests are dry and all
-requests are recorded and used later, being stored in 'tests/cassettes'.
-To avoid using recorded requests and to run live tests set PYWIKIBOT_LIVE_TESTS=1
 
 Decorators
 =====================
@@ -269,15 +266,11 @@ Require that the given list of modules can be imported.
   @require_modules(['important1', 'musthave2'])
   def test_require_modules(self):
 
-@(unittest.)mock.patch
+@unittest.mock.patch
 -----------------------
 Replaces `target` with object specified in `new`. Refer to mock's documentation.
 This is especially useful in tests, where requests to third-parties should be
 avoided.
-
-In Python 3, this is part of the built-in unittest module. But `mock` should
-be installed using pip for Python 2. Import whichever is available from the
-`tests` package.
 
 ::
 
@@ -360,4 +353,3 @@ Other class attributes
 - ``user = True`` : test class needs to login to site
 - ``sysop = True`` : test class needs to login to site as a sysop
 - ``write = True`` : test class needs to write to a site
-- ``vcr = True``: test class uses VCR.py to record requests for dry testing

@@ -1,20 +1,21 @@
 # -*- coding: utf-8 -*-
 """Test Link functionality."""
 #
-# (C) Pywikibot team, 2014-2017
+# (C) Pywikibot team, 2014-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from __future__ import absolute_import, division, unicode_literals
 
 import re
 
 import pywikibot
 
 from pywikibot import config2 as config
-from pywikibot.page import Link, Page
+from pywikibot import Site
+from pywikibot.page import Link, Page, SiteLink
+from pywikibot.site import Namespace
 from pywikibot.exceptions import Error, InvalidTitle
-from pywikibot.tools import PYTHON_VERSION
 
 from tests.aspects import (
     unittest,
@@ -70,155 +71,132 @@ class TestLink(DefaultDrySiteTestCase):
 
     def test_valid(self):
         """Test that valid titles are correctly normalized."""
-        self.assertEqual(Link('Sandbox', self.get_site()).title, 'Sandbox')
-        self.assertEqual(Link('A "B"', self.get_site()).title, 'A "B"')
-        self.assertEqual(Link('A \'B\'', self.get_site()).title, 'A \'B\'')
-        self.assertEqual(Link('.com', self.get_site()).title, '.com')
-        self.assertEqual(Link('~', self.get_site()).title, '~')
-        self.assertEqual(Link('"', self.get_site()).title, '"')
-        self.assertEqual(Link('\'', self.get_site()).title, '\'')
-        self.assertEqual(Link('Talk:Sandbox', self.get_site()).title, 'Sandbox')
-        self.assertEqual(Link('Talk:Foo:Sandbox', self.get_site()).title, 'Foo:Sandbox')
-        self.assertEqual(Link('File:Example.svg', self.get_site()).title, 'Example.svg')
-        self.assertEqual(Link('File_talk:Example.svg', self.get_site()).title, 'Example.svg')
-        self.assertEqual(Link('Foo/.../Sandbox', self.get_site()).title, 'Foo/.../Sandbox')
-        self.assertEqual(Link('Sandbox/...', self.get_site()).title, 'Sandbox/...')
-        self.assertEqual(Link('A~~', self.get_site()).title, 'A~~')
-        self.assertEqual(Link(':A', self.get_site()).title, 'A')
-        # Length is 256 total, but only title part matters
-        self.assertEqual(Link('Category:' + 'X' * 248, self.get_site()).title, 'X' * 248)
-        self.assertEqual(Link('X' * 252, self.get_site()).title, 'X' * 252)
-        self.assertEqual(Link('A%20B', self.get_site()).title, 'A B')
-        self.assertEqual(Link('A &eacute; B', self.get_site()).title, u'A é B')
-        self.assertEqual(Link('A &#233; B', self.get_site()).title, u'A é B')
-        self.assertEqual(Link('A &#x00E9; B', self.get_site()).title, u'A é B')
-        self.assertEqual(Link('A &nbsp; B', self.get_site()).title, 'A B')
-        self.assertEqual(Link('A &#160; B', self.get_site()).title, 'A B')
+        title_tests = ['Sandbox', 'A "B"', "A 'B'", '.com', '~', '"', "'",
+                       'Foo/.../Sandbox', 'Sandbox/...', 'A~~', 'X' * 252]
 
-        l = Link('A | B', self.get_site())
-        self.assertEqual(l.title, 'A')
-        self.assertEqual(l.anchor, ' B')
+        extended_title_tests = [
+            ('Talk:Sandbox', 'Sandbox'),
+            ('Talk:Foo:Sandbox', 'Foo:Sandbox'),
+            ('File:Example.svg', 'Example.svg'),
+            ('File_talk:Example.svg', 'Example.svg'),
+            (':A', 'A'),
+            # Length is 256 total, but only title part matters
+            ('Category:' + 'X' * 248, 'X' * 248),
+            ('A%20B', 'A B'),
+            ('A &eacute; B', 'A é B'),
+            ('A &#233; B', 'A é B'),
+            ('A &#x00E9; B', 'A é B'),
+            ('A &nbsp; B', 'A B'),
+            ('A &#160; B', 'A B'),
+        ]
 
-        l = Link('A%23B', self.get_site())
-        self.assertEqual(l.title, 'A')
-        self.assertEqual(l.section, 'B')
+        site = self.get_site()
+
+        for title in title_tests:
+            with self.subTest(title=title):
+                self.assertEqual(Link(title, site).title, title)
+
+        for link, title in extended_title_tests:
+            with self.subTest(link=link, title=title):
+                self.assertEqual(Link(link, site).title, title)
+
+        anchor_link = Link('A | B', site)
+        self.assertEqual(anchor_link.title, 'A')
+        self.assertEqual(anchor_link.anchor, ' B')
+
+        section_link = Link('A%23B', site)
+        self.assertEqual(section_link.title, 'A')
+        self.assertEqual(section_link.section, 'B')
 
     def test_invalid(self):
         """Test that invalid titles raise InvalidTitle exception."""
-        exception_message_regex = (
-            r'^The link does not contain a page title$'
-        )
-
-        texts_to_test = ['', ':', '__  __', '  __  ']
-
-        for text in texts_to_test:
-            with self.assertRaisesRegex(
-                    InvalidTitle,
-                    exception_message_regex):
-                Link(text, self.get_site()).parse()
-
         # Bad characters forbidden regardless of wgLegalTitleChars
         def generate_contains_illegal_chars_exc_regex(text):
             exc_regex = (
-                r'^(u|)\'%s\' contains illegal char\(s\) (u|)\'%s\'$' % (
-                    re.escape(text), re.escape(text[2])
-                ))
+                r'^(u|)\'{}\' contains illegal char\(s\) (u|)\'{}\'$'
+                .format(re.escape(text), re.escape(text[2])))
             return exc_regex
-
-        texts_to_test = ['A [ B', 'A ] B', 'A { B', 'A } B', 'A < B', 'A > B']
-
-        for text in texts_to_test:
-            with self.assertRaisesRegex(
-                    InvalidTitle,
-                    generate_contains_illegal_chars_exc_regex(text)):
-                Link(text, self.get_site()).parse()
-
-        # URL encoding
-        # %XX is understood by wikimedia but not %XXXX
-        with self.assertRaisesRegex(
-                InvalidTitle,
-                r'^(u|)\'A%23B\' contains illegal char\(s\) (u|)\'%23\'$'):
-            Link('A%2523B', self.get_site()).parse()
-
-        # A link is invalid if their (non-)talk page would be in another
-        # namespace than the link's "other" namespace
-        with self.assertRaisesRegex(
-                InvalidTitle,
-                (r'The \(non-\)talk page of (u|)\'Talk:File:Example.svg\''
-                 r' is a valid title in another namespace.')):
-            Link('Talk:File:Example.svg', self.get_site()).parse()
 
         # Directory navigation
         def generate_contains_dot_combinations_exc_regex(text):
-            exc_regex = (
-                r'^\(contains \. / combinations\): (u|)\'%s\'$' % re.escape(
-                    text)
-            )
+            exc_regex = (r'^\(contains \. / combinations\): (u|)\'{}\'$'
+                         .format(re.escape(text)))
             return exc_regex
-
-        texts_to_test = ['.', '..', './Sandbox', '../Sandbox', 'Foo/./Sandbox',
-                         'Foo/../Sandbox', 'Sandbox/.', 'Sandbox/..']
-
-        for text in texts_to_test:
-            with self.assertRaisesRegex(
-                    InvalidTitle,
-                    generate_contains_dot_combinations_exc_regex(text)):
-                Link(text, self.get_site()).parse()
 
         # Tilde
         def generate_contains_tilde_exc_regex(text):
             exc_regex = r'^\(contains ~~~\): (u|)\'%s\'$' % re.escape(text)
             return exc_regex
 
-        texts_to_test = ['A ~~~ Name', 'A ~~~~ Signature', 'A ~~~~~ Timestamp']
-
-        for text in texts_to_test:
-            with self.assertRaisesRegex(
-                    InvalidTitle,
-                    generate_contains_tilde_exc_regex(text)):
-                Link(text, self.get_site()).parse()
-
         # Overlength
         def generate_overlength_exc_regex(text):
             exc_regex = r'^\(over 255 bytes\): (u|)\'%s\'$' % re.escape(text)
             return exc_regex
 
-        texts_to_test = [('x' * 256), ('Invalid:' + 'X' * 248)]
-
-        for text in texts_to_test:
-            with self.assertRaisesRegex(
-                    InvalidTitle,
-                    generate_overlength_exc_regex(text)):
-                Link(text, self.get_site()).parse()
-
         # Namespace prefix without actual title
         def generate_has_no_title_exc_regex(text):
-            exc_regex = r'^(u|)\'%s\' has no title\.$' % re.escape(text)
+            exc_regex = r'^(u|)\'{}\' has no title\.$'.format(
+                re.escape(text.strip()))
             return exc_regex
 
-        texts_to_test = ['Talk:', 'Category: ', 'Category: #bar']
+        title_tests = [
+            # Empty title
+            (['', ':', '__  __', '  __  '],
+             r'^The link does not contain a page title$'),
 
-        for text in texts_to_test:
-            with self.assertRaisesRegex(
-                    InvalidTitle,
-                    generate_has_no_title_exc_regex(text.strip())):
-                Link(text, self.get_site()).parse()
+            (['A [ B', 'A ] B', 'A { B', 'A } B', 'A < B', 'A > B'],
+             generate_contains_illegal_chars_exc_regex),
+
+            # URL encoding
+            # %XX is understood by wikimedia but not %XXXX
+            (['A%2523B'],
+             r'^(u|)\'A%23B\' contains illegal char\(s\) (u|)\'%23\'$'),
+
+            # A link is invalid if their (non-)talk page would be in another
+            # namespace than the link's "other" namespace
+            (['Talk:File:Example.svg'],
+             r'The \(non-\)talk page of (u|)\'Talk:File:Example.svg\''
+             r' is a valid title in another namespace.'),
+
+            (['.', '..', './Sandbox', '../Sandbox', 'Foo/./Sandbox',
+              'Foo/../Sandbox', 'Sandbox/.', 'Sandbox/..'],
+             generate_contains_dot_combinations_exc_regex),
+
+            (['A ~~~ Name', 'A ~~~~ Signature', 'A ~~~~~ Timestamp'],
+             generate_contains_tilde_exc_regex),
+
+            ([('x' * 256), ('Invalid:' + 'X' * 248)],
+             generate_overlength_exc_regex),
+
+            (['Talk:', 'Category: ', 'Category: #bar'],
+             generate_has_no_title_exc_regex),
+        ]
+
+        for texts_to_test, exception_regex in title_tests:
+            for text in texts_to_test:
+                with self.subTest(title=text):
+                    if callable(exception_regex):
+                        regex = exception_regex(text)
+                    else:
+                        regex = exception_regex
+                    with self.assertRaisesRegex(InvalidTitle, regex):
+                        Link(text, self.get_site()).parse()
 
     def test_relative(self):
         """Test that relative links are handled properly."""
         # Subpage
-        p = Page(self.get_site(), 'Foo')
-        l = Link('/bar', p)
-        self.assertEqual(l.title, 'Foo/bar')
-        self.assertEqual(l.site, self.get_site())
+        page = Page(self.get_site(), 'Foo')
+        rel_link = Link('/bar', page)
+        self.assertEqual(rel_link.title, 'Foo/bar')
+        self.assertEqual(rel_link.site, self.get_site())
         # Subpage of Page with section
-        p = Page(self.get_site(), 'Foo#Baz')
-        l = Link('/bar', p)
-        self.assertEqual(l.title, 'Foo/bar')
-        self.assertEqual(l.site, self.get_site())
+        page = Page(self.get_site(), 'Foo#Baz')
+        rel_link = Link('/bar', page)
+        self.assertEqual(rel_link.title, 'Foo/bar')
+        self.assertEqual(rel_link.site, self.get_site())
         # Non-subpage link text beginning with slash
-        l = Link('/bar', self.get_site())
-        self.assertEqual(l.title, '/bar')
+        abs_link = Link('/bar', self.get_site())
+        self.assertEqual(abs_link.title, '/bar')
 
 
 class Issue10254TestCase(DefaultDrySiteTestCase):
@@ -238,21 +216,8 @@ class Issue10254TestCase(DefaultDrySiteTestCase):
     def test_no_change(self):
         """Test T102461 (Python issue 10254) is not encountered."""
         title = 'Li̍t-sṳ́'
-        l = Link(title, self.site)
-        self.assertEqual(l.title, 'Li̍t-sṳ́')
-
-    @unittest.skipIf(PYTHON_VERSION != (2, 6, 6), 'Python 2.6.6-only test')
-    def test_py266_bug_exception(self):
-        """Test Python issue 10254 causes an exception."""
-        pywikibot.page.unicodedata = __import__('unicodedata')
-        title = 'Li̍t-sṳ́'
-        with self.assertRaisesRegex(
-                UnicodeError,
-                re.escape('Link(%r, %s): combining characters detected, which '
-                          'are not supported by Pywikibot on Python 2.6.6. '
-                          'See https://phabricator.wikimedia.org/T102461'
-                          % (title, self.site))):
-            Link(title, self.site)
+        link = Link(title, self.site)
+        self.assertEqual(link.title, 'Li̍t-sṳ́')
 
 
 # ---- The first set of tests are explicit links, starting with a ':'.
@@ -420,7 +385,7 @@ class TestFullyQualifiedExplicitLinkSameFamilyParser(LinkTestCase):
 
 class TestFullyQualifiedExplicitLinkDifferentFamilyParser(LinkTestCase):
 
-    """Link tests."""
+    """Test link to a different family."""
 
     sites = {
         'enws': {
@@ -477,7 +442,7 @@ class TestFullyQualifiedExplicitLinkDifferentFamilyParser(LinkTestCase):
 
 class TestFullyQualifiedExplicitLinkNoLangConfigFamilyParser(LinkTestCase):
 
-    """Link tests."""
+    """Test link from family without lang code to a different family."""
 
     sites = {
         'wikidata': {
@@ -534,7 +499,7 @@ class TestFullyQualifiedExplicitLinkNoLangConfigFamilyParser(LinkTestCase):
 
 class TestFullyQualifiedNoLangFamilyExplicitLinkParser(LinkTestCase):
 
-    """Link tests."""
+    """Test wikibase links."""
 
     sites = {
         'wikidata': {
@@ -546,7 +511,7 @@ class TestFullyQualifiedNoLangFamilyExplicitLinkParser(LinkTestCase):
             'code': 'en'
         },
         'test.wp': {
-            'family': 'test',
+            'family': 'wikipedia',
             'code': 'test'
         },
     }
@@ -595,7 +560,7 @@ class TestFullyQualifiedNoLangFamilyExplicitLinkParser(LinkTestCase):
 
 class TestFullyQualifiedOneSiteFamilyExplicitLinkParser(LinkTestCase):
 
-    """Link tests."""
+    """Test links to one site target family."""
 
     family = 'species'
     code = 'species'
@@ -622,12 +587,12 @@ class TestFullyQualifiedOneSiteFamilyExplicitLinkParser(LinkTestCase):
         self.assertEqual(link.namespace, 1)
 
 
-# ---- Tests of a Link without colons, which shouldnt be interwikis, follow.
+# ---- Tests of a Link without colons, which shouldn't be interwikis, follow.
 
 
 class TestPartiallyQualifiedImplicitLinkSameSiteParser(LinkTestCase):
 
-    """Link tests."""
+    """Test partially qualified links to same site."""
 
     family = 'wikipedia'
     code = 'en'
@@ -676,7 +641,7 @@ class TestPartiallyQualifiedImplicitLinkSameSiteParser(LinkTestCase):
 
 class TestPartiallyQualifiedImplicitLinkDifferentCodeParser(LinkTestCase):
 
-    """Link tests."""
+    """Test partially qualified links to different code."""
 
     family = 'wikipedia'
     code = 'en'
@@ -705,7 +670,7 @@ class TestPartiallyQualifiedImplicitLinkDifferentCodeParser(LinkTestCase):
 
 class TestPartiallyQualifiedImplicitLinkDifferentFamilyParser(LinkTestCase):
 
-    """Link tests."""
+    """Test partially qualified links to different family."""
 
     family = 'wikipedia'
     code = 'en'
@@ -763,7 +728,7 @@ class TestFullyQualifiedImplicitLinkSameFamilyParser(LinkTestCase):
 
 class TestFullyQualifiedImplicitLinkDifferentFamilyParser(LinkTestCase):
 
-    """Link tests."""
+    """Test link to a different family without preleading colon."""
 
     sites = {
         'enws': {
@@ -820,7 +785,7 @@ class TestFullyQualifiedImplicitLinkDifferentFamilyParser(LinkTestCase):
 
 class TestFullyQualifiedImplicitLinkNoLangConfigFamilyParser(LinkTestCase):
 
-    """Link tests."""
+    """Test implicit link from family without lang code to other family."""
 
     sites = {
         'wikidata': {
@@ -845,7 +810,7 @@ class TestFullyQualifiedImplicitLinkNoLangConfigFamilyParser(LinkTestCase):
         self.assertEqual(link.namespace, 4)
 
     def test_fully_qualified_NS1_code(self):
-        """Test 'en:wikipedia:Talk:Main Page' on wikidata is not namespace 1."""
+        """Test 'en:wikipedia:Talk:Main Page' on wikidata isn't namespace 1."""
         config.mylang = 'wikidata'
         config.family = 'wikidata'
         link = Link('en:wikipedia:Talk:Main Page')
@@ -877,7 +842,7 @@ class TestFullyQualifiedImplicitLinkNoLangConfigFamilyParser(LinkTestCase):
 
 class TestFullyQualifiedNoLangFamilyImplicitLinkParser(LinkTestCase):
 
-    """Link tests."""
+    """Test wikibase links without preleading colon."""
 
     family = 'wikidata'
     code = 'test'
@@ -909,7 +874,7 @@ class TestFullyQualifiedNoLangFamilyImplicitLinkParser(LinkTestCase):
         config.family = 'wikipedia'
         link = Link('wikidata:testwiki:Q6')
         link.parse()
-        self.assertEqual(link.site, pywikibot.Site('test', 'test'))
+        self.assertEqual(link.site, pywikibot.Site('test', 'wikipedia'))
         self.assertEqual(link.title, 'Q6')
         self.assertEqual(link.namespace, 0)
 
@@ -919,14 +884,14 @@ class TestFullyQualifiedNoLangFamilyImplicitLinkParser(LinkTestCase):
         config.family = 'wikipedia'
         link = Link('wikidata:testwiki:Talk:Q6')
         link.parse()
-        self.assertEqual(link.site, pywikibot.Site('test', 'test'))
+        self.assertEqual(link.site, pywikibot.Site('test', 'wikipedia'))
         self.assertEqual(link.title, 'Q6')
         self.assertEqual(link.namespace, 1)
 
 
 class TestFullyQualifiedOneSiteFamilyImplicitLinkParser(LinkTestCase):
 
-    """Link tests."""
+    """Test links to one site target family without preleading colon."""
 
     family = 'species'
     code = 'species'
@@ -998,7 +963,8 @@ class TestEmptyTitle(TestCase):
         """Test that Link doesn't allow empty."""
         link = Link('', self.get_site())
         self.assertRaisesRegex(
-            InvalidTitle, "The link does not contain a page title", link.parse)
+            InvalidTitle, 'The link does not contain a page title',
+            link.parse)
 
     def test_namespace_lookalike(self):
         """Test that Link does only detect valid namespaces."""
@@ -1039,6 +1005,30 @@ class TestInvalidInterwikiLinks(WikimediaDefaultSiteTestCase):
             'bulba:this-will-never-work is not a local page on wikipedia:en, '
             'and the interwiki prefix bulba is not supported by Pywikibot!',
             link.parse)
+
+
+class TestSiteLink(WikimediaDefaultSiteTestCase):
+
+    """Test parsing namespaces when creating SiteLinks."""
+
+    def _test_link(self, link, title, namespace, site_code, site_fam):
+        """Test the separate contents of the link."""
+        self.assertEqual(link.title, title)
+        self.assertEqual(link.namespace, namespace)
+        self.assertEqual(link.site, Site(site_code, site_fam))
+        self.assertEqual(link.badges, [])
+
+    def test_site_link(self):
+        """Test parsing of title."""
+        self._test_link(SiteLink('Foobar', 'enwiki'),
+                        'Foobar', Namespace.MAIN, 'en', 'wikipedia')
+        self._test_link(SiteLink('Mall:!!', 'svwiki'),
+                        '!!', Namespace.TEMPLATE, 'sv', 'wikipedia')
+        self._test_link(SiteLink('Vorlage:!!', 'dewikibooks'),
+                        '!!', Namespace.TEMPLATE, 'de', 'wikibooks')
+        self._test_link(SiteLink('Ai Weiwei: Never Sorry', 'enwiki'),
+                        'Ai Weiwei: Never Sorry', Namespace.MAIN,
+                        'en', 'wikipedia')
 
 
 if __name__ == '__main__':  # pragma: no cover

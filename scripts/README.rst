@@ -13,7 +13,7 @@ To get started on proper usage of the bot framework, please refer to:
     `Manual:Pywikibot <https://www.mediawiki.org/wiki/Manual:Pywikibot>`_
 
 NOTE : Script names with # at start are not yet present in Core rather are
-       expected to be merged based on reviews and need from Compat version.
+       expected to be merged based on reviews and need from compat version.
 
 The contents of the package
 ---------------------------
@@ -22,6 +22,8 @@ The contents of the package
     | Bots and Scripts                                                                 |
     +========================+=========================================================+
     | add_text.py            | Adds text at the top or end of pages.                   |
+    +------------------------+---------------------------------------------------------+
+    | archivebot.py          | Archives discussion threads.                            |
     +------------------------+---------------------------------------------------------+
     | basic.py               | Is a template from which simple bots can be made.       |
     +------------------------+---------------------------------------------------------+
@@ -43,10 +45,6 @@ The contents of the package
     |                        | redirected categories.                                  |
     +------------------------+---------------------------------------------------------+
     | #censure.py            | Bad word checker bot.                                   |
-    +------------------------+---------------------------------------------------------+
-    | cfd.py                 | Processes the categories for discussion working page.   |
-    |                        | It parses out the actions that need to be taken as a    |
-    |                        | result of CFD discussions and performs them.            |
     +------------------------+---------------------------------------------------------+
     | checkimages.py         | Check recently uploaded files. Checks if a file         |
     |                        | description is present and if there are other problems  |
@@ -87,9 +85,9 @@ The contents of the package
     | djvutext.py            | Extracts OCR text from djvu files and uploads onto      |
     |                        | pages in the "Page" namespace on Wikisource.            |
     +------------------------+---------------------------------------------------------+
-    | editarticle.py         | Edit a Wikipedia article with your favourite editor     |
+    | download_dump.py       | Downloads dumps from dumps.wikimedia.org                |
     +------------------------+---------------------------------------------------------+
-    | featured.py            | A robot to check feature articles.                      |
+    | editarticle.py         | Edit a Wikipedia article with your favourite editor     |
     +------------------------+---------------------------------------------------------+
     | fixing_redirects.py    | Correct all redirect links of processed pages.          |
     +------------------------+---------------------------------------------------------+
@@ -102,7 +100,7 @@ The contents of the package
     +------------------------++--------------------------------------------------------+
     | harvest_template.py    | [IMPROV] Reduce maximum line length to 130              |
     +------------------------+---------------------------------------------------------+
-    | illustrate_wikidata.py | Dont use 'gen' to refer to the generator factory        |
+    | illustrate_wikidata.py | Don't use 'gen' to refer to the generator factory       |
     +------------------------+---------------------------------------------------------+
     | image.py               | This script can be used to change one image to another  |
     |                        | or remove an image entirely.                            |
@@ -130,6 +128,8 @@ The contents of the package
     | interwiki.py           | A robot to check interwiki links on all pages (or       |
     |                        | a range of pages) of a wiki.                            |
     +------------------------+---------------------------------------------------------+
+    | interwikidata.py       | Script to handle interwiki links based on Wikibase.     |
+    +------------------------+---------------------------------------------------------+
     | isbn.py                | Bot to convert all ISBN-10 codes to the ISBN-13         |
     |                        | format.                                                 |
     +------------------------+---------------------------------------------------------+
@@ -150,7 +150,7 @@ The contents of the package
     +------------------------+---------------------------------------------------------+
     | movepages.py           | Bot page moves to another title.                        |
     +------------------------+---------------------------------------------------------+
-    | #ndashredir.py         | Creates hyphenated redirects to articles with n dash    |
+    | ndashredir.py          | Creates hyphenated redirects to articles with n dash    |
     |                        | or m dash in their title.                               |
     +------------------------+---------------------------------------------------------+
     | newitem.py             | Script creates new items on Wikidata based on criteria. |
@@ -192,8 +192,6 @@ The contents of the package
     +------------------------+---------------------------------------------------------+
     | revertbot.py           | Revert edits.                                           |
     +------------------------+---------------------------------------------------------+
-    | script_wui.py          | Fix anomalous escape (\)                                |
-    +------------------------+---------------------------------------------------------+
     | selflink.py            | This bot goes over multiple pages of the home wiki,     |
     |                        | searches for selflinks, and allows removing them.       |
     +------------------------+---------------------------------------------------------+
@@ -225,6 +223,8 @@ The contents of the package
     |                            | [[Special:Statistics]] in a table on a wiki page.   |
     |                            | Thus it creates and updates a statistics wikitable. |
     +------------------------+---+-----------------------------------------------------+
+    | surnames_redirects.py  | Bot to create redirects based on name order.            |
+    +------------------------+---------------------------------------------------------+
     | table2wiki.py          | Semi-automatic converting HTML-tables to wiki-tables    |
     +------------------------+---------------------------------------------------------+
     | template.py            | change one template (that is {{...}}) into another.     |
@@ -253,24 +253,32 @@ The contents of the package
     +------------------------+---------------------------------------------------------+
     | welcome.py             | Script to welcome new users.                            |
     +------------------------+---------------------------------------------------------+
+    | wikisourcetext.py      | This bot applies to wikisource sites to upload text.    |
+    +------------------------+---------------------------------------------------------+
 
 
-    +-----------------------------------------------------------------------------------+
-    | archive                | Scripts no longer maintained.                            |
-    +========================+==========================================================+
-    | archivebot.py          | Archives discussion threads.                             |
-    +------------------------+----------------------------------------------------------+
+    +----------------------------------------------------------------------------------+
+    | archive                | Scripts no longer maintained.                           |
+    +========================+=========================================================+
+    | cfd.py                 | Processes the categories for discussion working page.   |
+    |                        | It parses out the actions that need to be taken as a    |
+    |                        | result of CFD discussions and performs them.            |
+    +------------------------+---------------------------------------------------------+
+    | featured.py            | A robot to check feature articles.                      |
+    +------------------------+---------------------------------------------------------+
 
 
-    +-----------------------------------------------------------------------------------+
-    | Others                                                                            |
-    +========================+==========================================================+
-    | i18n (folder)          | Contains i18n translations for bot edit summaries.       |
-    +------------------------+----------------------------------------------------------+
-    | maintenance (folder)   | Contains maintenance scripts for the developing team.    |
-    +------------------------+----------------------------------------------------------+
-    | README.rst             | This file (Short info of all scripts).                   |
-    +------------------------+----------------------------------------------------------+
+    +----------------------------------------------------------------------------------+
+    | Others                                                                           |
+    +========================+=========================================================+
+    | i18n (folder)          | Contains i18n translations for bot edit summaries.      |
+    +------------------------+---------------------------------------------------------+
+    | maintenance (folder)   | Contains maintenance scripts for the developing team.   |
+    +------------------------+---------------------------------------------------------+
+    | userscripts (folder)   | Empty folder for user scripts.                          |
+    +------------------------+---------------------------------------------------------+
+    | README.rst             | This file (Short info of all scripts).                  |
+    +------------------------+---------------------------------------------------------+
 
 **External software can be used with Pywikibot:**
   * PyGoogle to access Google Web API and PySearch to access Yahoo! Search
@@ -281,4 +289,4 @@ More precise information, and a list of the options that are available for
 the various programs, can be retrieved by running the bot with the -help
 parameter, e.g.
 
-    python pwb.py interwiki.py -help
+    python pwb.py interwiki -help

@@ -12,7 +12,6 @@ Error: Base class, all exceptions should the subclass of this class.
   - InvalidTitle: Invalid page title
   - CaptchaError: Captcha is asked and config.solve_captcha == False
   - Server504Error: Server timed out with HTTP 504 code
-  - PageNotFound: Page not found (deprecated)
   - i18n.TranslationError: i18n/l10n message not available
   - UnknownExtension: Extension is not defined for this site
 
@@ -39,7 +38,8 @@ PageLoadRelatedError: any exception which happens while loading a Page.
 PageSaveRelatedError: page exceptions within the save operation on a Page
 (alias: PageNotSaved).
 
-  - SpamfilterError: MediaWiki spam filter detected a blacklisted URL
+  - SpamblacklistError: MediaWiki spam filter detected a blacklisted URL
+  - TitleblacklistError: MediaWiki detected a blacklisted page title
   - OtherPageSaveError: misc. other save related exception.
   - LockedPage: Page is locked
       - LockedNoPage: Title is locked against creation
@@ -56,10 +56,13 @@ ServerError: a problem with the server.
 
 WikiBaseError: any issue specific to Wikibase.
 
+  - NoWikibaseEntity: entity doesn't exist
   - CoordinateGlobeUnknownException: globe is not implemented yet.
   - EntityTypeUnknownException: entity type is not available on the site.
 
 TimeoutError: request failed with a timeout
+
+  - MaxlagTimeoutError: request failed with a maxlag timeout
 
 DeprecationWarning: old functionality replaced by new functionality
 
@@ -72,7 +75,7 @@ be aware of its status.
   - tools._NotImplementedWarning: do not use
   - NotImplementedWarning: functionality not implemented
 
-UserWarning: warnings targetted at users
+UserWarning: warnings targeted at users
 
   - config2._ConfigurationDeprecationWarning: user configuration file problems
   - login._PasswordFileWarning: password file problems
@@ -80,20 +83,11 @@ UserWarning: warnings targetted at users
   - FamilyMaintenanceWarning: missing information in family definition
 """
 #
-# (C) Pywikibot team, 2008-2017
+# (C) Pywikibot team, 2008-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
-from pywikibot.tools import (
-    # __ to avoid conflict with ModuleDeprecationWrapper._deprecated
-    deprecated as __deprecated,
-    ModuleDeprecationWrapper as _ModuleDeprecationWrapper,
-    UnicodeMixin,
-    UnicodeType,
-    _NotImplementedWarning,
-)
+from pywikibot.tools import _NotImplementedWarning
 
 
 class NotImplementedWarning(_NotImplementedWarning):
@@ -103,7 +97,7 @@ class NotImplementedWarning(_NotImplementedWarning):
     pass
 
 
-class ArgumentDeprecationWarning(UserWarning):
+class ArgumentDeprecationWarning(UserWarning, FutureWarning):
 
     """Command line argument that is no longer supported."""
 
@@ -117,17 +111,16 @@ class FamilyMaintenanceWarning(UserWarning):
     pass
 
 
-class Error(UnicodeMixin, Exception):  # noqa
+class Error(Exception):
 
-    """Pywikibot error"""
+    """Pywikibot error."""
 
-    # NOTE: UnicodeMixin must be the first object Error class is derived from.
-    def __init__(self, arg):
-        """Constructor."""
+    def __init__(self, arg: str):
+        """Initializer."""
         self.unicode = arg
 
-    def __unicode__(self):
-        """Return a unicode string representation."""
+    def __str__(self) -> str:
+        """Return a string representation."""
         return self.unicode
 
 
@@ -142,12 +135,12 @@ class PageRelatedError(Error):
 
     # Preformatted UNICODE message where the page title will be inserted
     # Override this in subclasses.
-    # u"Oh noes! Page %s is too funky, we should not delete it ;("
+    # 'Oh noes! Page %s is too funky, we should not delete it ;('
     message = None
 
     def __init__(self, page, message=None):
         """
-        Constructor.
+        Initializer.
 
         @param page: Page that caused the exception
         @type page: Page object
@@ -159,25 +152,24 @@ class PageRelatedError(Error):
             raise Error("PageRelatedError is abstract. Can't instantiate it!")
 
         self.page = page
-        self.title = page.title(asLink=True)
+        self.title = page.title(as_link=True)
         self.site = page.site
 
         if '%(' in self.message and ')s' in self.message:
-            super(PageRelatedError, self).__init__(
-                self.message % self.__dict__)
+            super().__init__(self.message % self.__dict__)
         else:
-            super(PageRelatedError, self).__init__(self.message % page)
+            super().__init__(self.message % page)
 
     def getPage(self):
         """Return the page related to the exception."""
         return self.page
 
 
-class PageSaveRelatedError(PageRelatedError):  # noqa
+class PageSaveRelatedError(PageRelatedError):
 
-    """Saving the page has failed"""
+    """Saving the page has failed."""
 
-    message = u"Page %s was not saved."
+    message = 'Page %s was not saved.'
 
     # This property maintains backwards compatibility with
     # the old PageNotSaved which inherited from Error
@@ -186,28 +178,28 @@ class PageSaveRelatedError(PageRelatedError):  # noqa
     @property
     def args(self):
         """Expose args."""
-        return UnicodeType(self)
+        return str(self)
 
 
 class OtherPageSaveError(PageSaveRelatedError):
 
     """Saving the page has failed due to uncatchable error."""
 
-    message = "Edit to page %(title)s failed:\n%(reason)s"
+    message = 'Edit to page %(title)s failed:\n%(reason)s'
 
     def __init__(self, page, reason):
-        """Constructor.
+        """Initializer.
 
         @param reason: Details of the problem
         @type reason: Exception or basestring
         """
         self.reason = reason
-        super(OtherPageSaveError, self).__init__(page)
+        super().__init__(page)
 
     @property
     def args(self):
         """Expose args."""
-        return UnicodeType(self.reason)
+        return str(self.reason)
 
 
 class NoUsername(Error):
@@ -217,11 +209,11 @@ class NoUsername(Error):
     pass
 
 
-class NoPage(PageRelatedError):  # noqa
+class NoPage(PageRelatedError):
 
-    """Page does not exist"""
+    """Page does not exist."""
 
-    message = u"Page %s doesn't exist."
+    message = "Page %s doesn't exist."
 
     pass
 
@@ -233,23 +225,19 @@ class UnsupportedPage(PageRelatedError):
     # namespaces < 0 aren't supported (T169213)
     message = 'Page %s is not supported due to namespace restriction.'
 
-    pass
-
 
 class NoMoveTarget(PageRelatedError):
 
     """Expected move target page not found."""
 
-    message = "Move target page of %s not found."
-
-    pass
+    message = 'Move target page of %s not found.'
 
 
 class PageLoadRelatedError(PageRelatedError):
 
     """Loading the contents of a Page object has failed."""
 
-    message = u"Page %s was not loaded."
+    message = 'Page %s was not loaded.'
 
 
 class InconsistentTitleReceived(PageLoadRelatedError):
@@ -257,7 +245,7 @@ class InconsistentTitleReceived(PageLoadRelatedError):
     """Page receives a title inconsistent with query."""
 
     def __init__(self, page, actual):
-        """Constructor.
+        """Initializer.
 
         @param page: Page that caused the exception
         @type page: Page object
@@ -266,12 +254,12 @@ class InconsistentTitleReceived(PageLoadRelatedError):
 
         """
         self.message = "Query on %s returned data on '{0}'".format(actual)
-        super(InconsistentTitleReceived, self).__init__(page)
+        super().__init__(page)
 
 
-class SiteDefinitionError(Error):  # noqa
+class SiteDefinitionError(Error):
 
-    """Site does not exist"""
+    """Site does not exist."""
 
     pass
 
@@ -282,16 +270,16 @@ class SiteDefinitionError(Error):  # noqa
 NoSuchSite = SiteDefinitionError
 
 
-class UnknownSite(SiteDefinitionError):  # noqa
+class UnknownSite(SiteDefinitionError):
 
-    """Site does not exist in Family"""
+    """Site does not exist in Family."""
 
     pass
 
 
-class UnknownFamily(SiteDefinitionError):  # noqa
+class UnknownFamily(SiteDefinitionError):
 
-    """Family is not registered"""
+    """Family is not registered."""
 
     pass
 
@@ -303,22 +291,18 @@ class UnknownExtension(Error, NotImplementedError):
     pass
 
 
-class IsRedirectPage(PageRelatedError):  # noqa
+class IsRedirectPage(PageRelatedError):
 
-    """Page is a redirect page"""
+    """Page is a redirect page."""
 
-    message = u"Page %s is a redirect page."
-
-    pass
+    message = 'Page %s is a redirect page.'
 
 
-class IsNotRedirectPage(PageRelatedError):  # noqa
+class IsNotRedirectPage(PageRelatedError):
 
-    """Page is not a redirect page"""
+    """Page is not a redirect page."""
 
-    message = u"Page %s is not a redirect page."
-
-    pass
+    message = 'Page %s is not a redirect page.'
 
 
 class CircularRedirect(PageRelatedError):
@@ -331,7 +315,7 @@ class CircularRedirect(PageRelatedError):
 
     """
 
-    message = u"Page %s is a circular redirect."
+    message = 'Page %s is a circular redirect.'
 
 
 class InterwikiRedirectPage(PageRelatedError):
@@ -343,58 +327,52 @@ class InterwikiRedirectPage(PageRelatedError):
 
     """
 
-    message = (u"Page redirects to a page on another Site.\n"
-               u"Page: %(page)s\n"
-               u"Target page: %(target_page)s on %(target_site)s.")
+    message = ('Page redirects to a page on another Site.\n'
+               'Page: %(page)s\n'
+               'Target page: %(target_page)s on %(target_site)s.')
 
     def __init__(self, page, target_page):
-        """Constructor.
+        """Initializer.
 
         @param target_page: Target page of the redirect.
         @type reason: Page
         """
         self.target_page = target_page
         self.target_site = target_page.site
-        super(InterwikiRedirectPage, self).__init__(page)
+        super().__init__(page)
 
 
-class InvalidTitle(Error):  # noqa
+class InvalidTitle(Error):
 
-    """Invalid page title"""
-
-    pass
-
-
-class LockedPage(PageSaveRelatedError):  # noqa
-
-    """Page is locked"""
-
-    message = u"Page %s is locked."
+    """Invalid page title."""
 
     pass
 
 
-class LockedNoPage(LockedPage):  # noqa
+class LockedPage(PageSaveRelatedError):
 
-    """Title is locked against creation"""
+    """Page is locked."""
 
-    message = u"Page %s does not exist and is locked preventing creation."
-
-    pass
+    message = 'Page %s is locked.'
 
 
-class CascadeLockedPage(LockedPage):  # noqa
+class LockedNoPage(LockedPage):
 
-    """Page is locked due to cascading protection"""
+    """Title is locked against creation."""
 
-    message = u"Page %s is locked due to cascading protection."
-
-    pass
+    message = 'Page %s does not exist and is locked preventing creation.'
 
 
-class SectionError(Error):  # noqa
+class CascadeLockedPage(LockedPage):
 
-    """The section specified by # does not exist"""
+    """Page is locked due to cascading protection."""
+
+    message = 'Page %s is locked due to cascading protection.'
+
+
+class SectionError(Error):
+
+    """The section specified by # does not exist."""
 
     pass
 
@@ -406,62 +384,61 @@ class NoCreateError(PageSaveRelatedError):
 
     """Parameter nocreate doesn't allow page creation."""
 
-    message = u"Page %s could not be created due to parameter nocreate"
-
-    pass
+    message = 'Page %s could not be created due to parameter nocreate'
 
 
-class EditConflict(PageSaveRelatedError):  # noqa
+class EditConflict(PageSaveRelatedError):
 
-    """There has been an edit conflict while uploading the page"""
+    """There has been an edit conflict while uploading the page."""
 
-    message = u"Page %s could not be saved due to an edit conflict"
-
-    pass
+    message = 'Page %s could not be saved due to an edit conflict'
 
 
-class PageDeletedConflict(EditConflict):  # noqa
+class PageDeletedConflict(EditConflict):
 
-    """Page was deleted since being retrieved"""
+    """Page was deleted since being retrieved."""
 
-    message = u"Page %s has been deleted since last retrieved."
-
-    pass
+    message = 'Page %s has been deleted since last retrieved.'
 
 
-class PageCreatedConflict(EditConflict):  # noqa
+class PageCreatedConflict(EditConflict):
 
-    """Page was created by another user"""
+    """Page was created by another user."""
 
-    message = u"Page %s has been created since last retrieved."
-
-    pass
+    message = 'Page %s has been created since last retrieved.'
 
 
 class ArticleExistsConflict(EditConflict):
 
     """Page already exists."""
 
-    message = u"Destination article %s already exists and is not a redirect to the source article"
+    message = ('Destination article %s already exists and is not a redirect '
+               'to the source article')
 
-    pass
 
-
-class SpamfilterError(PageSaveRelatedError):
+class SpamblacklistError(PageSaveRelatedError):
 
     """Page save failed because MediaWiki detected a blacklisted spam URL."""
 
-    message = "Edit to page %(title)s rejected by spam filter due to content:\n%(url)s"
+    message = ('Edit to page %(title)s rejected by spam filter due to '
+               'content:\n%(url)s')
 
     def __init__(self, page, url):
-        """Constructor."""
+        """Initializer."""
         self.url = url
-        super(SpamfilterError, self).__init__(page)
+        super().__init__(page)
 
 
-class ServerError(Error):  # noqa
+class TitleblacklistError(PageSaveRelatedError):
 
-    """Got unexpected server response"""
+    """Page save failed because MediaWiki detected a blacklisted page title."""
+
+    message = 'Page %s is title-blacklisted.'
+
+
+class ServerError(Error):
+
+    """Got unexpected server response."""
 
     pass
 
@@ -473,9 +450,9 @@ class FatalServerError(ServerError):
     pass
 
 
-class Server504Error(ServerError):  # noqa
+class Server504Error(ServerError):
 
-    """Server timed out with HTTP 504 code"""
+    """Server timed out with HTTP 504 code."""
 
     pass
 
@@ -497,9 +474,9 @@ class BadTitle(Error):
 # UserBlocked exceptions should in general not be caught. If the bot has
 # been blocked, the bot operator should address the reason for the block
 # before continuing.
-class UserBlocked(Error):  # noqa
+class UserBlocked(Error):
 
-    """Your username or IP has been blocked"""
+    """Your username or IP has been blocked."""
 
     pass
 
@@ -530,11 +507,18 @@ class UserRightsError(Error):
     pass
 
 
+class HiddenKeyError(UserRightsError, KeyError):
+
+    """Insufficient user rights to view the hidden key."""
+
+    pass
+
+
 class NotEmailableError(PageRelatedError):
 
     """This user is not emailable."""
 
-    message = "%s is not emailable."
+    message = '%s is not emailable.'
 
     pass
 
@@ -544,6 +528,22 @@ class WikiBaseError(Error):
     """Wikibase related error."""
 
     pass
+
+
+class NoWikibaseEntity(WikiBaseError):
+
+    """This entity doesn't exist."""
+
+    def __init__(self, entity):
+        """
+        Initializer.
+
+        @param entity: Wikibase entity
+        @type entity: WikibaseEntity
+        """
+        super().__init__("Entity '%s' doesn't exist on %s"
+                         % (entity.id, entity.repo))
+        self.entity = entity
 
 
 class CoordinateGlobeUnknownException(WikiBaseError, NotImplementedError):
@@ -567,33 +567,8 @@ class TimeoutError(Error):
     pass
 
 
-@__deprecated
-class DeprecatedPageNotFoundError(Error):
+class MaxlagTimeoutError(TimeoutError):
 
-    """Page not found (deprecated)."""
-
-    pass
-
-
-@__deprecated
-class _EmailUserError(UserRightsError, NotEmailableError):
-
-    """Email related error."""
+    """Request failed with a maxlag timeout error."""
 
     pass
-
-
-wrapper = _ModuleDeprecationWrapper(__name__)
-wrapper._add_deprecated_attr(
-    'UploadWarning',
-    replacement_name='pywikibot.data.api.UploadWarning',
-    warning_message='pywikibot.exceptions.UploadWarning is deprecated; '
-                    'use APISite.upload with a warning handler instead.')
-wrapper._add_deprecated_attr('PageNotFound', DeprecatedPageNotFoundError,
-                             warning_message='{0}.{1} is deprecated, and no '
-                                             'longer used by pywikibot; use '
-                                             'http.fetch() instead.')
-wrapper._add_deprecated_attr(
-    'UserActionRefuse', _EmailUserError,
-    warning_message='UserActionRefuse is deprecated; '
-                    'use UserRightsError and/or NotEmailableError')

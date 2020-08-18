@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
 """Test confirming paraminfo contains expected values."""
 #
-# (C) Pywikibot team, 2015-2016
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
-
 from pywikibot.family import WikimediaFamily
 from pywikibot.page import Claim, Property
 from pywikibot.site import DataSite
-from pywikibot.tools import MediaWikiVersion
 
 from tests.aspects import (
     unittest,
@@ -50,7 +47,12 @@ class KnownTypesTestBase(TestCaseBase):
     def _check_param_superset(self, site, module, parameter, expected):
         """Check that a parameter only contains entries in expected list."""
         values = self._get_param_values(site, module, parameter)
-        self.assertGreaterEqual(set(expected), set(values))
+        exp = set(expected)
+        val = set(values)
+        if not exp.issuperset(val):
+            diff = val - exp
+            self.fail('Unexpected param{} {} in values'
+                      .format('s' if len(diff) > 1 else '', diff))
 
 
 class MediaWikiKnownTypesTestCase(KnownTypesTestBase,
@@ -81,10 +83,10 @@ class MediaWikiKnownTypesTestCase(KnownTypesTestBase,
     def test_watchlist_show_flags(self):
         """Test watchlist show flags."""
         types = ['minor', 'bot', 'anon', 'patrolled']
-        if MediaWikiVersion(self.site.version()) >= MediaWikiVersion('1.24'):
+        if self.site.mw_version >= '1.24':
             types.append('unread')
 
-        known = types + ['!%s' % item for item in types]
+        known = types + ['!{}'.format(item) for item in types]
 
         self._check_param_subset(self.site, 'query+watchlist', 'show', known)
 
@@ -92,12 +94,12 @@ class MediaWikiKnownTypesTestCase(KnownTypesTestBase,
         """Test watchlist type."""
         known = ['edit', 'new', 'log']
 
-        _version = MediaWikiVersion(self.site.version())
+        mw_ver = self.site.mw_version
 
-        if _version >= MediaWikiVersion('1.20'):
+        if mw_ver >= '1.20':
             known.append('external')
-        if _version.version >= (1, 27):
-            if _version >= MediaWikiVersion('1.27.0-wmf.4') or _version.suffix == 'alpha':
+        if mw_ver.version >= (1, 27):
+            if mw_ver >= '1.27.0-wmf.4' or mw_ver.suffix == 'alpha':
                 known.append('categorize')
 
         self._check_param_values(self.site, 'query+watchlist', 'type', known)
@@ -124,17 +126,27 @@ class MediaWikiKnownTypesTestCase(KnownTypesTestBase,
             'text/css',
             'text/plain',
         ]
-        if MediaWikiVersion(self.site.version()) >= MediaWikiVersion('1.24'):
+        if self.site.mw_version >= '1.24':
             base.append('application/json')
+        if self.site.mw_version >= '1.36.0-wmf.2':
+            base.extend([
+                'application/octet-stream',
+                'application/unknown',
+                'application/x-binary',
+                'text/unknown',
+                'unknown/unknown',
+            ])
         if isinstance(self.site, DataSite):
             # It is not clear when this format has been added, see T129281.
             base.append('application/vnd.php.serialized')
-        extensions = set(e['name'] for e in self.site.siteinfo['extensions'])
+        extensions = {e['name'] for e in self.site.siteinfo['extensions']}
         if 'CollaborationKit' in extensions:
             base.append('text/x-collabkit')
 
-        self._check_param_values(self.site, 'edit', 'contentformat', base)
-        self._check_param_values(self.site, 'parse', 'contentformat', base)
+        for module in ('edit', 'parse'):
+            args = self.site, module, 'contentformat', base
+            with self.subTest(module=module):
+                self._check_param_values(*args)
 
     def test_content_model(self):
         """Test content model."""
@@ -147,20 +159,16 @@ class MediaWikiKnownTypesTestCase(KnownTypesTestBase,
         wmf = [
             'MassMessageListContent',
             'SecurePoll',
-            'flow-board',
             'Scribunto',
             'JsonSchema',
         ]
-        if MediaWikiVersion(self.site.version()) >= MediaWikiVersion('1.24'):
+        if self.site.mw_version >= '1.24':
             base.append('json')
 
         self._check_param_subset(self.site, 'edit', 'contentmodel', base)
         self._check_param_subset(self.site, 'parse', 'contentmodel', base)
 
         if isinstance(self.site.family, WikimediaFamily):
-            # T151151 - en.wiki uninstalled Flow extension:
-            if self.site.family == 'wikipedia' and self.site.code == 'en':
-                wmf.remove('flow-board')
             self._check_param_subset(self.site, 'parse', 'contentmodel', wmf)
 
     def test_revision_deletion_type(self):
@@ -224,13 +232,20 @@ class WikibaseKnownTypesTests(KnownTypesTestBase,
 
     def test_entities(self):
         """Test known entities."""
-        known = ['item', 'property']
-        self._check_param_values(self.repo, 'wbsearchentities', 'type', known)
+        unsupported = {'form', 'lexeme', 'sense'}  # T195435
+        supported = {'item', 'property'}
+        known = supported | unsupported
+        self._check_param_superset(
+            self.repo, 'wbsearchentities', 'type', known)
 
     # Missing datatypes won't crash pywikibot but should be noted
     def test_datatypes(self):
         """Test that all encountered datatypes are known."""
-        unsupported = set()
+        unsupported = {
+            'wikibase-form', 'wikibase-lexeme', 'wikibase-sense',  # T194890
+            'musical-notation',  # T218506
+            'entity-schema',  # T245949
+        }
         known = set(Property.types) | unsupported
         self._check_param_superset(
             self.repo, 'wbformatvalue', 'datatype', known)

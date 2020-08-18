@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
 """Test plural module."""
 #
-# (C) Pywikibot team, 2015
+# (C) Pywikibot team, 2015-2020
 #
 # Distributed under the terms of the MIT license.
 #
-from __future__ import absolute_import, unicode_literals
+from contextlib import suppress
 
 from pywikibot import plural
 
-from tests.aspects import (
-    unittest, TestCase, MetaTestCaseClass,
-)
-from tests.utils import add_metaclass
+from tests.aspects import unittest, TestCase, MetaTestCaseClass
 
 
 class MetaPluralRulesTest(MetaTestCaseClass):
@@ -36,10 +33,11 @@ class MetaPluralRulesTest(MetaTestCaseClass):
                     index = rule['plural'](num)
                     self.assertLess(index, rule['nplurals'],
                                     msg='Plural for {0} created an index {1} '
-                                        '(greater than {2})'.format(num, index,
-                                                                    rule['nplurals']))
+                                        '(greater than {2})'
+                                        .format(num, index, rule['nplurals']))
                     num_plurals.add(index)
-                self.assertCountEqual(num_plurals, list(range(rule['nplurals'])))
+                self.assertCountEqual(num_plurals,
+                                      list(range(rule['nplurals'])))
 
             # Don't already fail on creation
             if callable(rule.get('plural')):
@@ -48,17 +46,15 @@ class MetaPluralRulesTest(MetaTestCaseClass):
                 return test_static_rule
 
         for lang, rule in plural.plural_rules.items():
-            cls.add_method(dct, 'test_{0}'.format(lang), create_test(rule),
+            cls.add_method(dct, 'test_{0}'.format(lang.replace('-', '_')),
+                           create_test(rule),
                            doc_suffix='for "{0}"'.format(lang))
         return super(MetaPluralRulesTest, cls).__new__(cls, name, bases, dct)
 
 
-@add_metaclass
-class TestPluralRules(TestCase):
+class TestPluralRules(TestCase, metaclass=MetaPluralRulesTest):
 
     """Test the consistency of the plural rules."""
-
-    __metaclass__ = MetaPluralRulesTest
 
     net = False
     # for callable plural rules it'll test up until this number, this number
@@ -67,7 +63,5 @@ class TestPluralRules(TestCase):
 
 
 if __name__ == '__main__':  # pragma: no cover
-    try:
+    with suppress(SystemExit):
         unittest.main()
-    except SystemExit:
-        pass
